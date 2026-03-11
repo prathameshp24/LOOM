@@ -172,4 +172,4 @@ def searchAndPlay(query: str, searchType: str = "track")->bool:
 
 
 if __name__ == "__main__":
-    searchAndPlay("Kal chaudavein ki raat thi", "track")
+    searchAndPlay("Main rang sharbaton ka", "track")

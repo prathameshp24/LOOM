@@ -3,6 +3,7 @@ import json
 from google import genai
 from google.genai import types
 
+from core.state import globalState
 from agents.desktop_agent.agent import runDesktopAgent
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -17,14 +18,34 @@ Currently available agents:
 1. "desktop_agent": Handles OS interactions, opening apps, playing music, volume, brightness and timers, etc.
 2. "coding_agent": (OFFLINE)
 3. "research_agent": (OFFLINE)
+4. "conversational": Use this if the user is just chatting, asking a question that doesn't require physical desktop actions, or asking about past actions.
 
 
 Respond strictly in json format matching this structure : 
 {
     "target_agent": "name_of_agent",
-    "plan": "Step 1: ..., Step 2: ..."
+    "plan": "Step 1: ..., Step 2: ...",
+    "direct_response": "If target_agent is 'conversational', put your text reply to the user here. Otherwise, leave blank."
 }
 """
+
+
+def getOrchestratorChat():
+    """Fetches or initializes the persistent Orchestrator chat session."""
+    if globalState.orchestratorChat is None:
+        config = types.GenerateContentConfig(
+        system_instruction=ORCHESTRATOR_PROMPT,
+        response_mime_type="application/json",
+        temperature=0.1
+    )
+    
+        globalState.orchestratorChat = globalState.client.chats.create(
+            model="gemini-2.5-flash",
+            config=config
+        )
+
+    return globalState.orchestratorChat
+        
 
 def processUserRequest(userInput: str):
     """The main entry point. Plans and routes."""
@@ -32,24 +53,16 @@ def processUserRequest(userInput: str):
     logging.info("Orchestrator is analyzing the request...")
 
 
-    config = types.GenerateContentConfig(
-        system_instruction=ORCHESTRATOR_PROMPT,
-        response_mime_type="application/json",
-        temperature=0.1
-    )
-
+    chat = getOrchestratorChat()
+    
 
     try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=userInput,
-            config=config
-        )
+        response = chat.send_message(userInput)
 
         decision = json.loads(response.text)
         targetAgent = decision.get("target_agent")
         plan = decision.get("plan")
-
+        directResponse = decision.get("direct_response")
 
 
         logging.info(f"Plan created : {plan}")
@@ -58,7 +71,12 @@ def processUserRequest(userInput: str):
         if targetAgent == "desktop_agent":
             result = runDesktopAgent(plan)
             print(f"\n🧵 (Desktop): {result}\n")
+            chat.send_message(f"SYSTEM UPDATE: The desktop agent completed the task. Result : {result}")
         
+        elif targetAgent == "conversational":
+            print(f"\n🧵: {directResponse}\n")
+        
+
         else:
             print(f"\n🧵 Orchestrator : I need the {targetAgent} to do this, but it is completely offline.\n")
 
@@ -67,7 +85,7 @@ def processUserRequest(userInput: str):
         logging.error(f"Orchestrator failed to route the task. {e}")
     
 
-if __name__ == "__main__":
-    print("Initializing L.O.O.M. Multi Agent System")
-    testPrompt = "Lower my brightness by 20%, decreae volume by 10%, play namami shamishan"
-    processUserRequest(testPrompt)
+# if __name__ == "__main__":
+#     print("Initializing L.O.O.M. Multi Agent System")
+#     testPrompt = "Lower my brightness by 20%, decreae volume by 10%, play namami shamishan"
+#     processUserRequest(testPrompt)

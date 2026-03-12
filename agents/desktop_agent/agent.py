@@ -2,6 +2,7 @@ import logging
 from google import genai
 from google.genai import types
 from tools.registry import LOOM_TOOLS, getToolByName
+from core.state import globalState
 
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -16,17 +17,29 @@ and use your native tools to execute it flawlessly.
 Do not make up tools. If a tool fails, report it.
 """
 
+def getDesktopChat():
+    """Fetches or initializes the persistent Desktop Agent chat session."""
+    if globalState.desktopChat is None:
+        config = types.GenerateContentConfig(
+            system_instruction=DESKTOP_SYSTEM_PROMPT,
+            tools=LOOM_TOOLS,
+            temperature=0.0,
+        )
+        globalState.desktopChat = globalState.client.chats.create(
+            model="gemini-2.5-flash", 
+            config=config
+        )
+    return globalState.desktopChat
+
+
+
+
 def runDesktopAgent(plan: str) -> str:
     """Executes the specific desktop related plan"""
     logging.info("Desktop Agent Took the control of execution")
 
-    config = types.GenerateContentConfig(
-        system_instruction=DESKTOP_SYSTEM_PROMPT,
-        tools=LOOM_TOOLS,
-        temperature=0.0
-    )
-
-    chat = client.chats.create(model="gemini-2.5-flash", config=config)
+    
+    chat = getDesktopChat()
 
 
     try:

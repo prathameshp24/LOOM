@@ -1,13 +1,9 @@
 import logging
-from google import genai
 from google.genai import types
-from tools.registry import LOOM_TOOLS, getToolByName
+from tools.registry import LOOM_TOOLS
 from core.state import globalState
 
-
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-
-client = genai.Client()
 
 DESKTOP_SYSTEM_PROMPT = """
 You are the L.O.O.M. Desktop Execution Agent.
@@ -25,61 +21,31 @@ def getDesktopChat():
             tools=LOOM_TOOLS,
             temperature=0.0,
         )
-        globalState.desktopChat = globalState.client.chats.create(
+        # CRITICAL: Use the stable 2.0 model for complex multi-tool execution
+        globalState.desktopChat = globalState.geminiClient.chats.create(
             model="gemini-2.5-flash", 
             config=config
         )
     return globalState.desktopChat
 
 
-
-
 def runDesktopAgent(plan: str) -> str:
     """Executes the specific desktop related plan"""
-    logging.info("Desktop Agent Took the control of execution")
-
+    logging.info("🖥️ Desktop Agent Took the control of execution")
     
     chat = getDesktopChat()
 
-
     try:
+        # Because AFC (Automatic Function Calling) is enabled, the SDK will 
+        # automatically pause, run the tools, feed the results back to the AI,
+        # and return the final summary right here in one line!
         response = chat.send_message(f"Execute this plan : {plan}")
-
-        if response.function_calls:
-            toolResponses = []
-            for functionCall in response.function_calls:
-                toolName = functionCall.name
-                args = functionCall.args
-
-                logging.info(f"Executing : {toolName}({args})")
-                targetFunction = getToolByName(toolName)
-
-                if targetFunction:
-                    try:
-                        result = targetFunction(**args)
-                        toolResponses.append(
-                            types.Part.from_function_response(
-                                name=toolName, response={"result": result}
-                            )
-                        )
-                    
-                    except Exception as e:
-                        toolResponses.append(
-                            types.Part.from_function_response(
-                                name=toolName, response={"error": str(e)}
-                            )
-                        )
-                    
-            finalResponse = chat.send_message(toolResponses)
-            return finalResponse.text
         
-        else:
-            return response.text
+        # Safeguard just in case the AI forgets to speak after executing tools
+        if not response.text:
+            return "Task executed, but no verbal confirmation was generated."
+            
+        return response.text
         
     except Exception as e:
         return f"Desktop agent encountered an error : {str(e)}"
-    
-
-
-
-

@@ -4,7 +4,7 @@ from tools.system.app_manager import is_app_running, open_app, close_app
 from tools.system.dbus_hardware import getBrightness, setBrightness, adjustBrightness, toggleMute, setVolume, adjustVolume
 from tools.system.dbus_media import togglePlayPause, nextTrack, previousTrack, getCurrentTrackInfo, searchAndPlay
 from tools.system.time_alarms import getCurrentTime, setTimer
-
+from tools.fs.search import readFile, findFiles
 
 logging.basicConfig(level=logging.INFO, format= '%(levelname)s: %(message)s')
 
@@ -24,7 +24,9 @@ LOOM_TOOLS = [
     getCurrentTrackInfo,
     searchAndPlay,
     getCurrentTime,
-    setTimer
+    setTimer,
+    findFiles,
+    readFile
 ]
 
 def getToolNames() -> list[str]:

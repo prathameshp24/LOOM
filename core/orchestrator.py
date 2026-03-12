@@ -15,7 +15,7 @@ You are the master orchestrator for L.O.O.M.
 Your job is to analyze the user's request, create a step by step plan and route it to the correct specialized agent.
 
 Currently available agents:
-1. "desktop_agent": Handles OS interactions, opening apps, playing music, volume, brightness and timers, etc.
+1. "desktop_agent": Handles OS interactions, opening apps, playing music, volume, brightness and timers, searching and reading files, etc.
 2. "coding_agent": (OFFLINE)
 3. "research_agent": (OFFLINE)
 4. "conversational": Use this if the user is just chatting, asking a question that doesn't require physical desktop actions, or asking about past actions.
@@ -29,63 +29,77 @@ Respond strictly in json format matching this structure :
 }
 """
 
-
-def getOrchestratorChat():
-    """Fetches or initializes the persistent Orchestrator chat session."""
-    if globalState.orchestratorChat is None:
-        config = types.GenerateContentConfig(
-        system_instruction=ORCHESTRATOR_PROMPT,
-        response_mime_type="application/json",
-        temperature=0.1
-    )
-    
-        globalState.orchestratorChat = globalState.client.chats.create(
-            model="gemini-2.5-flash",
-            config=config
-        )
-
-    return globalState.orchestratorChat
-        
-
 def processUserRequest(userInput: str):
-    """The main entry point. Plans and routes."""
     print(f"\nYou: {userInput}")
-    logging.info("Orchestrator is analyzing the request...")
+    logging.info("🧠 Orchestrator is thinking deeply...")
 
+    # 1. Initialize memory with the System Prompt if it's empty
+    if not globalState.orchestratorChat:
+        globalState.orchestratorChat.append({
+            "role": "system",
+            "content": ORCHESTRATOR_PROMPT
+        })
 
-    chat = getOrchestratorChat()
-    
+    # 2. Add the user's new prompt to memory
+    globalState.orchestratorChat.append({
+        "role": "user",
+        "content": userInput
+    })
 
     try:
-        response = chat.send_message(userInput)
+        # 3. Call OpenRouter with Reasoning Enabled
+        response = globalState.openrouterClient.chat.completions.create(
+            model="openrouter/hunter-alpha",
+            messages=globalState.orchestratorChat,
+            response_format={"type": "json_object"}, 
+            extra_body={"reasoning": {"enabled": True}}
+        )
 
-        decision = json.loads(response.text)
+        ai_message = response.choices[0].message
+        
+        # --- MEMORY PRESERVATION ---
+        assistant_memory = {
+            "role": "assistant",
+            "content": ai_message.content
+        }
+        # Keep reasoning details so the model remembers HOW it thought
+        if hasattr(ai_message, 'reasoning_details') and ai_message.reasoning_details:
+            assistant_memory["reasoning_details"] = ai_message.reasoning_details
+            
+        globalState.orchestratorChat.append(assistant_memory)
+        # ---------------------------
+
+        # 4. Parse the JSON Output
+        raw_text = ai_message.content.strip()
+        if raw_text.startswith("```json"):
+            raw_text = raw_text[7:-3].strip()
+        elif raw_text.startswith("```"):
+            raw_text = raw_text[3:-3].strip()
+
+        decision = json.loads(raw_text)
         targetAgent = decision.get("target_agent")
         plan = decision.get("plan")
         directResponse = decision.get("direct_response")
 
+        logging.info(f"📋 Plan created: {plan}")
+        logging.info(f"🔀 Routing to: {targetAgent}")
 
-        logging.info(f"Plan created : {plan}")
-        logging.info(f"Routing to : {targetAgent}")
-
+        # 5. Route to the specialized agents
         if targetAgent == "desktop_agent":
             result = runDesktopAgent(plan)
             print(f"\n🧵 (Desktop): {result}\n")
-            chat.send_message(f"SYSTEM UPDATE: The desktop agent completed the task. Result : {result}")
-        
+            
+            # CRITICAL: Tell OpenRouter what the Gemini hands just did
+            globalState.orchestratorChat.append({
+                "role": "user", 
+                "content": f"SYSTEM UPDATE: The desktop agent completed the task. Result: {result}"
+            })
+            
         elif targetAgent == "conversational":
             print(f"\n🧵: {directResponse}\n")
-        
-
+            
         else:
-            print(f"\n🧵 Orchestrator : I need the {targetAgent} to do this, but it is completely offline.\n")
-
+            print(f"\n🧵 Orchestrator: I need the {targetAgent} to do this, but it is offline.\n")
 
     except Exception as e:
-        logging.error(f"Orchestrator failed to route the task. {e}")
-    
-
-# if __name__ == "__main__":
-#     print("Initializing L.O.O.M. Multi Agent System")
-#     testPrompt = "Lower my brightness by 20%, decreae volume by 10%, play namami shamishan"
-#     processUserRequest(testPrompt)
+        logging.error(f"Orchestrator failed to route the task: {e}")

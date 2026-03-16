@@ -1,92 +1,271 @@
-# 🧵 L.O.O.M. (Layered Orchestration and Operational Mind)
+# 🧵 L.O.O.M. (Layered Orchestration & Operational Mind)
 
-**An autonomous, ambient, and deterministic desktop orchestrator designed natively for the Linux Wayland ecosystem.**
+**An autonomous, ambient, and deterministic desktop orchestrator built for the Linux Wayland ecosystem.**
 
-L.O.O.M. represents a paradigm shift in desktop automation. Moving beyond reactive chat interfaces and brittle GUI-scraping scripts, L.O.O.M. is designed to be a continuous, unmonitored background daemon—a true "Jarvis-like" entity for your local machine. It seamlessly integrates with your operating system to execute complex, multi-step workflows autonomously.
-
----
-
-## 🏛️ Core Architectural Philosophy
-
-L.O.O.M. operates on a strict hierarchy of interaction, prioritizing speed, reliability, and security over heuristic guessing:
-
-1. **Deterministic Inter-Process Communication (IPC):** Uses D-Bus (System & Session) to execute hardware and app commands instantly and invisibly without stealing window focus.
-2. **Semantic Accessibility Trees:** Uses AT-SPI2 to traverse native GTK/Qt applications programmatically, achieving 100% accuracy in UI element location.
-3. **Semantic Visual Grounding:** When native APIs fail (e.g., complex Electron apps or web canvases), relies on local Vision-Language Models (like Florence-2/OmniParser) to map the screen into structured data, completely replacing legacy computer vision (OpenCV) heuristics.
-4. **Event-Driven Execution:** Built on Python's `asyncio` framework to react to system state changes dynamically, completely eliminating arbitrary `time.sleep()` bottlenecks.
-5. **Stateful Multi-Agent Routing:** Utilizes a LangGraph-inspired state machine to route tasks between specialized agents (Desktop, Research, Coding) while maintaining robust, interruptible context.
+L.O.O.M. acts as a local "Jarvis-like" daemon that translates natural language commands into hardware control, file system operations, API interactions, and long-term memory retrieval. It is a **Heterogeneous Multi-Agent System** designed to optimize for both deep reasoning and lightning-fast physical execution.
 
 ---
 
-## 📂 System Architecture & Directory Structure
+## 🧠 Core Architecture: The "Split-Brain" System
 
-L.O.O.M. is built for massive scalability. It decouples the "Brain" (Orchestrator) from the "Hands" (Tools) and the "Personas" (Agents).
+L.O.O.M. decouples cognitive planning from physical tool usage through a sophisticated multi-agent design:
 
-```text
-loom/
-├── main.py                     # Systemd daemon entry point
-├── .env                        # API keys and system paths
-├── requirements.txt            # Python dependencies
-│
-├── core/                       # The Brain
-│   ├── orchestrator.py         # Graph-based routing (LangGraph logic)
-│   ├── state.py                # Shared state/context across agents
-│   └── memory_manager.py       # Qdrant (vectors) and SQLite (checkpoints) integration
-│
-├── agents/                     # The Workers
-│   ├── base_agent.py           # Abstract Base Class for agent standard IO
-│   ├── desktop_agent/          # Core Wayland OS interaction agent
-│   ├── research_agent/         # (Future) Web search and deep research
-│   └── coding_agent/           # (Future) Codebase manipulation
-│
-├── tools/                      # The Hands (Physical execution)
-│   ├── registry.py             # Maps natural language to tool execution
-│   ├── system/                 # D-Bus IPC (Volume, Brightness, Wi-Fi, Spotify/MPRIS)
-│   ├── fs/                     # File system operations (Watchdog, I/O)
-│   ├── vision/                 # UI Fallbacks (AT-SPI2, Florence-2 local VLM)
-│   └── macros.py               # Complex chained skills (e.g., "Deep Work Mode")
-│
-└── interfaces/                 # Human Interaction Layer
-    ├── cli.py                  # Standard terminal execution
-    ├── hitl.py                 # Human-In-The-Loop desktop notifications (Approve/Deny)
-    └── voice/                  # (Future) Local Wake-word, Whisper STT, Piper TTS
+### 1. The Orchestrator (The Brain)
+| Attribute | Details |
+|-----------|---------|
+| **Role** | Analyzes user intent, builds multi-step JSON execution plans, and routes tasks to specialized sub-agents |
+| **Engine** | Powered by **OpenRouter API** (supports deep-reasoning models like `hunter-alpha` or fast routers like `gemini-2.5-flash`) |
+| **State** | Stateless by default; memory is manually managed via persistent conversational arrays to preserve reasoning tokens |
+| **Location** | `core/orchestrator.py` |
 
-🗺️ Development Roadmap
-Phase 1: The Deterministic Foundation (Current)
-Objective: Replace brittle simulated keystrokes with direct Linux native IPC.
+### 2. The Desktop Agent (The Hands)
+| Attribute | Details |
+|-----------|---------|
+| **Role** | Executes the Orchestrator's JSON plan flawlessly using native Linux tools and APIs |
+| **Engine** | Powered by the universal **OpenAI tool-calling standard** (e.g., `nvidia/nemotron-3-nano-30b-a3b:free`) |
+| **Execution** | Features a custom-built, infinite `while True` loop that dynamically extracts JSON schemas, runs local Python functions, and feeds terminal output back to the LLM until task completion |
+| **Location** | `agents/desktop_agent/agent.py` |
 
-[ ] Implement tools/system/dbus_hardware.py (Volume, Brightness, Network).
+### 3. The Conversational Agent (The Voice)
+| Attribute | Details |
+|-----------|---------|
+| **Role** | Handles casual chat, contextual jokes, and general knowledge without wasting compute cycles on tool-calling evaluations |
+| **Usage** | Automatically selected by the Orchestrator for non-task queries |
 
-[ ] Implement tools/system/dbus_media.py (Spotify/MPRIS Play, Pause, Next, Metadata).
+---
 
-[ ] Refactor core execution loop to use asyncio instead of synchronous polling.
+## ⚡ Current Capabilities (V1)
 
-Phase 2: System Navigation & Semantic Fallback
-Objective: Enable flawless application interaction without blind X/Y coordinate clicking.
+### Hardware & OS Control
+Native integration with **Fedora Linux (Wayland)** for:
+- **Application Management**: Open/close apps via `flatpak` or native binaries (`gnome-calculator`, `spotify`, etc.)
+- **System Volume**: Adjust, set, or mute using `wpctl`
+- **Screen Brightness**: Read, set, or adjust using `brightnessctl`
+- **System Timers**: Set countdown timers and alarms
 
-[ ] Integrate pyatspi2 to read GTK/Qt application accessibility trees.
+### Media Orcheststration
+Deep **Spotify API** integration via `spotipy`:
+- Intelligently search, parse, and play music tracks without requiring exact URI strings
+- Control playback (play/pause, skip, previous track)
+- Read currently playing track metadata via D-Bus
 
-[ ] Deploy local VLM (Florence-2) for structured JSON mapping of opaque applications.
+### File System Navigation
+- Locate files/folders by name recursively across the Linux directory tree
+- Read and summarize local text files (notes, scripts, configs)
+- Returns absolute paths with truncated content for large files
 
-[ ] Remove all dependencies on OpenCV Canny edge detection.
+### Semantic Long-Term Memory
+| Component | Details |
+|-----------|---------|
+| **Vector Database** | Local **Qdrant** instance (`loom_db/`) |
+| **Embeddings** | 3072-dimensional vectors via `gemini-embedding-001` |
+| **Operations** | `remember_fact` (write) and `recall_fact` (semantic similarity search) |
+| **Usage** | Desktop Agent dynamically stores/retrieves user preferences |
 
-Phase 3: Multi-Agent Orchestration & Memory
-Objective: Give L.O.O.M. continuous context, fault tolerance, and specialized routing.
+### Vendor Agnosticism
+- Completely decoupled from proprietary SDKs (e.g., Google GenAI's Automatic Function Calling)
+- All tools are dynamically converted to **OpenAI JSON schemas** via `get_openai_tools()`
+- Enables instant, one-line model swapping via OpenRouter
 
-[ ] Implement core/state.py for interruptible execution graphs.
+---
 
-[ ] Integrate Qdrant vector database for local, long-term Episodic and Procedural memory.
+## 🛠️ Tech Stack
 
-[ ] Implement local SQLite checkpointing to recover gracefully from mid-task crashes.
+| Layer | Technology |
+|-------|------------|
+| **Language** | Python 3 |
+| **OS Target** | Fedora Linux (Wayland) |
+| **LLM Gateway** | OpenRouter API (via OpenAI Python SDK) |
+| **Vector Database** | Local Qdrant (`qdrant-client`) |
+| **State Management** | Custom Global Memory (`core/state.py`) |
+| **Tool Registry** | Dynamic Schema Generator (`tools/registry.py`) |
+| **Spotify Integration** | `spotipy` + D-Bus (`pydbus`) |
+| **Voice (Experimental)** | `faster-whisper`, `sounddevice`, `SpeechRecognition` |
 
-Phase 4: Ambient Operation & Security
-Objective: Make L.O.O.M. pervasive, voice-activated, and completely safe to run unmonitored.
+---
 
-[ ] Wrap all LLM-generated script execution in Bubblewrap zero-trust sandboxes.
+## 📁 Project Structure
 
-[ ] Build GNOME Gio.Notification Human-in-the-Loop (HITL) prompt for destructive actions.
+```
+l.o.o.m./
+├── main.py                     # Entry point: CLI loop
+├── core/
+│   ├── orchestrator.py         # Main routing logic
+│   ├── state.py                # Global state holder
+│   ├── memory_manager.py       # Qdrant vector operations
+│   └── config.py               # Configuration (if any)
+├── agents/
+│   ├── base_agent.py           # Base agent class
+│   ├── desktop_agent/          # ✅ ACTIVE: OS control
+│   ├── coding_agent/           # ⏸️ OFFLINE (V2)
+│   └── research_agent/         # ⏸️ OFFLINE (V2)
+├── tools/
+│   ├── registry.py             # Tool schema generator
+│   ├── system/
+│   │   ├── app_manager.py      # Open/close apps
+│   │   ├── dbus_hardware.py    # Volume, brightness
+│   │   ├── dbus_media.py       # Spotify control
+│   │   └── time_alarms.py      # Timers, clocks
+│   ├── fs/
+│   │   └── search.py           # File search & read
+│   └── vision/                 # (Future)
+├── interfaces/
+│   ├── cli.py                  # CLI interface
+│   ├── htl.py                  # (Future)
+│   └── voice/
+│       ├── stt_whisper.py      # Speech-to-text (local)
+│       ├── tts_whisper.py      # Text-to-speech (future)
+│       └── wake_word.py        # Wake word detection
+└── loom_db/                    # Qdrant vector storage
+```
 
-[ ] Daemonize the process using systemd user services.
+---
 
-[ ] Integrate local audio pipeline (faster-whisper + Piper).
+## 🚀 Getting Started
 
+### Prerequisites
+- **OS**: Fedora Linux (Wayland) or compatible Wayland compositor
+- **Python**: 3.8+
+- **System Tools**: `brightnessctl`, `wpctl`, `flatpak` (optional)
+- **API Keys**: OpenRouter, Spotify (optional)
+
+### Installation
+
+1. **Clone the repository**:
+   ```bash
+   git clone <repository-url>
+   cd l.o.o.m.
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Set up environment variables** (`.env`):
+   ```bash
+   OPENROUTER_API_KEY=your_openrouter_key
+   SPOTIPY_CLIENT_ID=your_spotify_client_id
+   SPOTIPY_CLIENT_SECRET=your_spotify_client_secret
+   ```
+
+4. **Run L.O.O.M.**:
+   ```bash
+   python main.py
+   ```
+
+---
+
+## 📖 Usage Examples
+
+### Basic Commands
+```
+👤 You: Open Spotify
+🧵 (Desktop): Spotify launched successfully
+
+👤 You: Play some Amit Trivedi
+🧵 (Desktop): Now playing: [track name] by Amit Trivedi
+
+👤 You: Set brightness to 70%
+🧵 (Desktop): Brightness set to 70%
+
+👤 You: Find my README file
+🧵 (Desktop): Found: /home/prats/Documents/Fun/l.o.o.m./README.md
+```
+
+### Memory Operations
+```
+👤 You: Remember that I prefer lo-fi music for coding
+🧵 (Desktop): Memory saved successfully
+
+👤 You: What music do I like for coding?
+🧵: Found these memories from the past:
+    - I prefer lo-fi music for coding (Topic: User Preferences)
+```
+
+---
+
+## 🛣️ Roadmap: What's Next (V2 & V3)
+
+The core execution loop is stable. The next phases of development will expand L.O.O.M.'s sensory inputs, agent roster, and user interface.
+
+### V2: Expanded Capabilities
+- [ ] **The Browser/Web Agent**: A new specialized agent equipped with web-scraping/Selenium tools to fetch live data (weather, news, research)
+- [ ] **The Voice Pipeline**: Integrating `stt_whisper.py` for continuous, hands-free auditory input with local `faster-whisper` models
+- [ ] **The "Hacker" Terminal UI**: Replacing standard `print()` logs with the `rich` library for live tables, loading spinners, colored tool-execution blocks, and markdown rendering
+- [ ] **The Coding Agent**: Equipping a specialized agent with tools to read the `l.o.o.m.` codebase, write Python files, and run local linters to self-improve
+
+### V3: Advanced Features
+- [ ] **Implicit RAG Memory**: Upgrading Qdrant from an "explicit tool" to a pre-prompt injection layer, so the Orchestrator intrinsically knows user preferences without needing to ask the Desktop Agent to search for them
+- [ ] **100% Offline Orchestration**: Fine-tuning a small ~3B parameter model (like `Qwen-2.5`) using Unsloth/LoRA strictly on L.O.O.M.'s JSON routing schemas to permanently replace the OpenRouter Orchestrator with a free, instant, local brain
+- [ ] **Cross-Platform Support**: Extending beyond Wayland to support GNOME (X11), KDE, and potentially macOS/Windows
+
+---
+
+## 🔧 Available Tools
+
+| Tool | Function | Description |
+|------|----------|-------------|
+| `open_app` | `command: str` | Launch applications (binaries or Flatpaks) |
+| `close_app` | `process_name: str` | Force-close running applications |
+| `is_app_running` | `process_name: str` | Check if a process is active |
+| `setBrightness` | `percentage: int` | Set screen brightness (0-100) |
+| `adjustBrightness` | `stepPercentage: int` | Increase/decrease brightness |
+| `getBrightness` | - | Get current brightness level |
+| `setVolume` | `percentage: int` | Set system volume (0-100) |
+| `adjustVolume` | `percentage: int` | Increase/decrease volume |
+| `toggleMute` | - | Toggle audio mute state |
+| `searchAndPlay` | `query: str, searchType: str` | Search & play Spotify tracks/playlists |
+| `getCurrentTrackInfo` | - | Get currently playing track metadata |
+| `togglePlayPause` | - | Toggle Spotify playback |
+| `nextTrack` / `previousTrack` | - | Skip tracks |
+| `setTimer` | `minutes: int` | Set a system timer/alarm |
+| `getCurrentTime` | - | Get current system time |
+| `findFiles` | `fileName: str, searchDir: str` | Search for files recursively |
+| `readFile` | `filePath: str` | Read file contents (max 2000 chars) |
+| `remember_fact` | `topic: str, fact: str` | Save to long-term vector memory |
+| `recall_fact` | `query: str` | Search memory by semantic similarity |
+
+---
+
+## 📝 Notes
+
+- **Tested On**: Fedora Linux with Wayland compositor
+- **Memory**: Qdrant stores vectors locally in `loom_db/` directory
+- **Privacy**: All processing is local except LLM calls via OpenRouter
+- **Extensibility**: New tools can be added by registering functions in `tools/registry.py`
+
+---
+
+## 🤝 Contributing
+
+L.O.O.M. is a personal project, but contributions are welcome! Areas of interest:
+- New tool integrations (more Linux utilities, APIs)
+- UI/UX improvements (TUI, GUI, web interface)
+- Model optimization (local LLM fine-tuning)
+- Cross-platform compatibility layers
+
+---
+
+## 📄 License
+
+[Add your license here]
+
+---
+
+## 🙏 Acknowledgments
+
+- **OpenRouter** for unified LLM access
+- **Qdrant** for local vector storage
+- **Spotipy** for Spotify API integration
+- **Faster Whisper** for local speech-to-text
+
+---
+
+<div align="center">
+
+**Built with 🧵 for the Linux community**
+
+*Layered Orchestration & Operational Mind*
+
+</div>

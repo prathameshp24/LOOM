@@ -5,6 +5,7 @@ from google.genai import types
 
 from core.state import globalState
 from agents.desktop_agent.agent import runDesktopAgent
+from core.memory_manager import getImplicitContext
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
@@ -20,6 +21,9 @@ Currently available agents:
 3. "research_agent": (OFFLINE)
 4. "conversational": Use this if the user is just chatting, asking a question that doesn't require physical desktop actions, or asking about past actions.
 
+CRITICAL MEMORY RULE: 
+- If the user explicitly asks you to SAVE or REMEMBER a new fact, route to `desktop_agent` to use the `rememberFact` tool.
+- If a [SYSTEM MEMORY: ...] block is provided in the user's prompt, use that information to fulfill their request immediately without asking the desktop_agent to search for it!
 
 Respond strictly in json format matching this structure : 
 {
@@ -33,6 +37,15 @@ def processUserRequest(userInput: str):
     print(f"\nYou: {userInput}")
     logging.info("🧠 Orchestrator is thinking deeply...")
 
+    implicitContext = getImplicitContext(userInput)
+
+    if implicitContext:
+        logging.info(f"Subconscious memory triggered: {implicitContext}")
+        augmentedPrompt = f"{implicitContext}\n\nUser Request: {userInput}"
+    
+    else:
+        augmentedPrompt = userInput
+
     # 1. Initialize memory with the System Prompt if it's empty
     if not globalState.orchestratorChat:
         globalState.orchestratorChat.append({
@@ -43,7 +56,7 @@ def processUserRequest(userInput: str):
     # 2. Add the user's new prompt to memory
     globalState.orchestratorChat.append({
         "role": "user",
-        "content": userInput
+        "content": augmentedPrompt
     })
 
     try:
@@ -55,6 +68,13 @@ def processUserRequest(userInput: str):
             extra_body={"reasoning": {"enabled": True}}
         )
 
+        if getattr(response, 'choices', None) is None or not response.choices:
+            logging.error("OpenRouter API Glitch: Returned null/empty choices. Model overloaded.")
+            print("\n🧵 Orchestrator: My API connection just glitched. Let me catch my breath and try again!\n")
+            return
+        
+
+
         ai_message = response.choices[0].message
         
         # --- MEMORY PRESERVATION ---
@@ -62,6 +82,9 @@ def processUserRequest(userInput: str):
             "role": "assistant",
             "content": ai_message.content
         }
+
+        
+
         # Keep reasoning details so the model remembers HOW it thought
         if hasattr(ai_message, 'reasoning_details') and ai_message.reasoning_details:
             assistant_memory["reasoning_details"] = ai_message.reasoning_details
@@ -70,13 +93,24 @@ def processUserRequest(userInput: str):
         # ---------------------------
 
         # 4. Parse the JSON Output
-        raw_text = ai_message.content.strip()
+        raw_text = ai_message.content or "{}"
+        raw_text = raw_text.strip()
         if raw_text.startswith("```json"):
             raw_text = raw_text[7:-3].strip()
         elif raw_text.startswith("```"):
             raw_text = raw_text[3:-3].strip()
 
-        decision = json.loads(raw_text)
+        try:
+            decision = json.loads(raw_text)
+        except json.JSONDecodeError:
+            decision = {}
+        
+        if not decision:
+            logging.error("Model returned invalid empty JSON.")
+            print("\n🧵 Orchestrator: I lost my train of thought. Can you rephrase that?\n")
+            return
+
+
         targetAgent = decision.get("target_agent")
         plan = decision.get("plan")
         directResponse = decision.get("direct_response")

@@ -1,8 +1,8 @@
 import logging
 from google.genai import types
-from tools.registry import LOOM_TOOLS
+from tools.registry import get_openai_tools, getToolByName
 from core.state import globalState
-
+import json
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 DESKTOP_SYSTEM_PROMPT = """
@@ -13,39 +13,71 @@ and use your native tools to execute it flawlessly.
 Do not make up tools. If a tool fails, report it.
 """
 
-def getDesktopChat():
-    """Fetches or initializes the persistent Desktop Agent chat session."""
-    if globalState.desktopChat is None:
-        config = types.GenerateContentConfig(
-            system_instruction=DESKTOP_SYSTEM_PROMPT,
-            tools=LOOM_TOOLS,
-            temperature=0.0,
-        )
-        # CRITICAL: Use the stable 2.0 model for complex multi-tool execution
-        globalState.desktopChat = globalState.geminiClient.chats.create(
-            model="gemini-2.5-flash", 
-            config=config
-        )
-    return globalState.desktopChat
+
 
 
 def runDesktopAgent(plan: str) -> str:
     """Executes the specific desktop related plan"""
     logging.info("🖥️ Desktop Agent Took the control of execution")
-    
-    chat = getDesktopChat()
 
-    try:
-        # Because AFC (Automatic Function Calling) is enabled, the SDK will 
-        # automatically pause, run the tools, feed the results back to the AI,
-        # and return the final summary right here in one line!
-        response = chat.send_message(f"Execute this plan : {plan}")
-        
-        # Safeguard just in case the AI forgets to speak after executing tools
-        if not response.text:
-            return "Task executed, but no verbal confirmation was generated."
+
+    if not globalState.desktopChat:
+        globalState.desktopChat.append({"role": "system", "content": DESKTOP_SYSTEM_PROMPT})
+
+    globalState.desktopChat.append({"role": "user", "content": f"Execute this plan: {plan}"})
+
+    availableTools = get_openai_tools()
+    
+
+    while True:
+        try:
+            response = globalState.openrouterClient.chat.completions.create(
+                model="nvidia/nemotron-3-nano-30b-a3b:free",
+                messages=globalState.desktopChat,
+                tools=availableTools,
+                tool_choice="auto"
+            )
+
+            message = response.choices[0].message
+
+            globalState.desktopChat.append(message)
+
+            if not message.tool_calls:
+                return message.content or "Task completed silently"
             
-        return response.text
-        
-    except Exception as e:
-        return f"Desktop agent encountered an error : {str(e)}"
+            for toolCall in message.tool_calls:
+                toolName = toolCall.function.name
+
+                try:
+                    arguments = json.loads(toolCall.function.arguments)
+
+                except json.JSONDecodeError:
+                    arguments = {}
+
+                logging.info(f"Executing : {toolName}({arguments})")
+
+                targetFunction = getToolByName(toolName)
+
+                if targetFunction:
+                    try:
+                        result = targetFunction(**arguments)
+                        toolResult = str(result)
+
+                    except Exception as e:
+                        toolResult = f"Error executing tool : {e}"
+                
+                else:
+                    toolResult = f"Error: {toolName} not found"
+
+                globalState.desktopChat.append({
+                    "role": "tool",
+                    "tool_call_id": toolCall.id,
+                    "name": toolName,
+                    "content": toolResult
+                })
+            
+            # The loop goes back to the top to send the results to the AI!
+            
+        except Exception as e:
+            logging.error(f"Desktop agent error: {str(e)}")
+            return f"Desktop agent encountered an error: {str(e)}"

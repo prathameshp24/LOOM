@@ -1,0 +1,125 @@
+import logging
+import uuid
+from qdrant_client import QdrantClient
+from qdrant_client.http import models
+from core.state import globalState
+
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+
+qdrant = QdrantClient(path="loom_db")
+COLLECTION_NAME = "loom_memory"
+
+try:
+    qdrant.get_collection(collection_name=COLLECTION_NAME)
+
+except Exception:
+    logging.info("Creating new Qdrant vector collection for long term memory")
+    qdrant.create_collection(
+        collection_name=COLLECTION_NAME,
+        vectors_config=models.VectorParams(
+            size=3072,
+            distance=models.Distance.COSINE
+        )
+    )
+
+
+def getEmbedding(text: str) -> list[float]:
+    """Translates text into a mathematical vector using Gemini"""
+
+    response = globalState.geminiClient.models.embed_content(
+        model="gemini-embedding-001",
+        contents=text
+    )
+
+    return response.embeddings[0].values
+
+
+def rememberFact(topic: str, fact: str) -> str:
+    """Saves a fact, preference, or piece of context in L.O.O.M.'s long term memory"""
+    logging.info(f"Saving memory about : {topic}")
+    try:
+        vector = getEmbedding(fact)
+        qdrant.upsert(
+            collection_name=COLLECTION_NAME,
+            points=[
+                models.PointStruct(
+                    id=str(uuid.uuid4()),
+                    vector=vector,
+                    payload={"topic": topic, "fact": fact}  
+                )
+            ]
+        )
+
+        return f"Successfully saved to long term memory: '{fact}'"
+    
+    except Exception as e:
+        return f"Failed to save memory: {e}"
+    
+
+def recallFact(query: str) -> str:
+    """Searches L.O.O.M.'s long term memory for information relevant to the user's query"""
+    logging.info(f"Searching long term memory for : {query}")
+    try:
+        vector = getEmbedding(query)
+        results = qdrant.query_points(
+            collection_name=COLLECTION_NAME,
+            query=vector,
+            limit=3
+        )
+
+        if not results.points:
+            return "No relevant memories found in long term storage"
+        
+        memoryStrings = []
+        for hit in results.points:
+            if hit.score >= 0.5:
+                memoryStrings.append(f"- {hit.payload['fact']} (Topic: {hit.payload['topic']})")
+
+        if not memoryStrings:
+            return "No highly relevant memories found"
+        
+        return "Found these memories from the past:\n" + "\n".join(memoryStrings)
+        
+    except Exception as e:
+        return f"Failed to search memory: {e}"
+    
+
+def getImplicitContext(query: str) -> str:
+    """Silently fetches relevant context for the orchestrator. Unlike recall_fact, this returns a hidden system string or empty string"""
+    try:
+        vector = getEmbedding(query)
+        results = qdrant.query_points(
+            collection_name=COLLECTION_NAME,
+            query=vector,
+            limit=3
+        )
+
+        if not results.points:
+            return ""
+        
+        memoryStrings = []
+        for hit in results.points:
+            if hit.score > 0.5:
+                memoryStrings.append(f"{hit.payload['fact']}")
+        
+        if not memoryStrings:
+             return ""
+             
+        # Format it as a hidden metadata block
+        return f"[SYSTEM MEMORY: {' | '.join(memoryStrings)}]"
+        
+    except Exception as e:
+        logging.error(f"Implicit memory fetch failed: {e}")
+        return ""
+
+
+
+
+
+    
+
+if __name__ == "__main__":
+    print("Testing Vector Database...")
+    print(rememberFact("User Preferences", "Prathamesh loves Amit Trivedi's music."))
+    print(recallFact("Who is my favorite artist?"))
+    qdrant.close()

@@ -1,3 +1,5 @@
 pydbus
 SpeechRecognition 
 pyaudio
+qdrant-client
+openai

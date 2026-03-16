@@ -18,7 +18,7 @@ class LoomState:
 
 
         self.orchestratorChat = []
-        self.desktopChat = None
+        self.desktopChat = []
         logging.info("L.O.O.M. Global state initialized")
         
 

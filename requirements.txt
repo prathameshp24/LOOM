@@ -1,5 +1,12 @@
 pydbus
-SpeechRecognition 
+SpeechRecognition
 pyaudio
 qdrant-client
 openai
+fastapi
+uvicorn[standard]
+sse-starlette
+playwright
+beautifulsoup4
+duckduckgo-search
+requests

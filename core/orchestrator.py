@@ -1,15 +1,34 @@
 import logging
 import json
+import re
 from google import genai
-from google.genai import types
 
 from core.state import globalState
 from agents.desktop_agent.agent import runDesktopAgent
+from agents.browser_agent.agent import runBrowserAgent
 from core.memory_manager import getImplicitContext
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 client = genai.Client()
+
+_COMPLEX_KEYWORDS = {
+    "and then", "after that", "while", "simultaneously", "at the same time",
+    "multiple", "both", "schedule", "remind me", "set up", "automate",
+    "every", "when i", "if i", "monitor", "track", "compare", "research",
+    "find me", "look up", "search for", "browse", "open website", "go to",
+}
+
+def _is_complex(text: str) -> bool:
+    """True if the query likely needs multi-step reasoning (longer or multi-action)."""
+    lower = text.lower()
+    if len(lower.split()) > 12:
+        return True
+    return any(kw in lower for kw in _COMPLEX_KEYWORDS)
+
+def _strip_thinking(text: str) -> str:
+    """Remove <think>...</think> blocks emitted by local Qwen3 reasoning."""
+    return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
 
 ORCHESTRATOR_PROMPT = """
 You are the master orchestrator for L.O.O.M.
@@ -17,8 +36,8 @@ Your job is to analyze the user's request, create a step by step plan and route 
 
 Currently available agents:
 1. "desktop_agent": Handles OS interactions, opening apps, playing music, volume, brightness and timers, searching and reading files, etc.
-2. "coding_agent": (OFFLINE)
-3. "research_agent": (OFFLINE)
+2. "browser_agent": Handles web research, searching the internet, reading webpages, filling forms, clicking elements on websites, taking screenshots of browser content.
+3. "coding_agent": (OFFLINE)
 4. "conversational": Use this if the user is just chatting, asking a question that doesn't require physical desktop actions, or asking about past actions.
 
 CRITICAL MEMORY RULE: 
@@ -33,9 +52,9 @@ Respond strictly in json format matching this structure :
 }
 """
 
-def processUserRequest(userInput: str):
-    print(f"\nYou: {userInput}")
+def processUserRequest(userInput: str, emit=print):
     logging.info("🧠 Orchestrator is thinking deeply...")
+    emit("__status__Thinking...")
 
     implicitContext = getImplicitContext(userInput)
 
@@ -60,17 +79,25 @@ def processUserRequest(userInput: str):
     })
 
     try:
-        # 3. Call OpenRouter with Reasoning Enabled
-        response = globalState.openrouterClient.chat.completions.create(
-            model="openrouter/hunter-alpha",
+        # 3. Call active backend (cloud or local)
+        call_kwargs = dict(
+            model=globalState.orchestratorModel,
             messages=globalState.orchestratorChat,
-            response_format={"type": "json_object"}, 
-            extra_body={"reasoning": {"enabled": True}}
+            response_format={"type": "json_object"},
         )
+        if globalState.mode == "cloud":
+            use_reasoning = _is_complex(userInput)
+            call_kwargs["extra_body"] = {"reasoning": {"enabled": use_reasoning}}
+            logging.info("🧠 Complex query — reasoning enabled" if use_reasoning else "⚡ Simple query — reasoning skipped")
+        else:
+            call_kwargs["extra_body"] = {"think": False}
+
+        logging.info(f"🌐 [{globalState.mode.upper()}] Orchestrator → {globalState.orchestratorModel}")
+        response = globalState.activeClient.chat.completions.create(**call_kwargs)
 
         if getattr(response, 'choices', None) is None or not response.choices:
             logging.error("OpenRouter API Glitch: Returned null/empty choices. Model overloaded.")
-            print("\n🧵 Orchestrator: My API connection just glitched. Let me catch my breath and try again!\n")
+            emit("My API connection just glitched. Try again!")
             return
         
 
@@ -90,11 +117,13 @@ def processUserRequest(userInput: str):
             assistant_memory["reasoning_details"] = ai_message.reasoning_details
             
         globalState.orchestratorChat.append(assistant_memory)
+        # Trim: keep system prompt + last 20 messages to prevent token bloat
+        if len(globalState.orchestratorChat) > 21:
+            globalState.orchestratorChat = globalState.orchestratorChat[:1] + globalState.orchestratorChat[-20:]
         # ---------------------------
 
-        # 4. Parse the JSON Output
-        raw_text = ai_message.content or "{}"
-        raw_text = raw_text.strip()
+        # 4. Parse the JSON Output (strip Qwen3 <think> blocks first)
+        raw_text = _strip_thinking(ai_message.content or "{}")
         if raw_text.startswith("```json"):
             raw_text = raw_text[7:-3].strip()
         elif raw_text.startswith("```"):
@@ -107,7 +136,7 @@ def processUserRequest(userInput: str):
         
         if not decision:
             logging.error("Model returned invalid empty JSON.")
-            print("\n🧵 Orchestrator: I lost my train of thought. Can you rephrase that?\n")
+            emit("I lost my train of thought. Can you rephrase that?")
             return
 
 
@@ -120,20 +149,33 @@ def processUserRequest(userInput: str):
 
         # 5. Route to the specialized agents
         if targetAgent == "desktop_agent":
-            result = runDesktopAgent(plan)
-            print(f"\n🧵 (Desktop): {result}\n")
-            
+            emit("__status__Running on desktop...")
+            globalState.desktopChat = []  # fresh context per task — orchestrator plan is self-contained
+            result = runDesktopAgent(plan, userInput)
+            emit(result)
+
             # CRITICAL: Tell OpenRouter what the Gemini hands just did
             globalState.orchestratorChat.append({
-                "role": "user", 
+                "role": "user",
                 "content": f"SYSTEM UPDATE: The desktop agent completed the task. Result: {result}"
             })
-            
+
+        elif targetAgent == "browser_agent":
+            emit("__status__Browsing the web...")
+            globalState.browserChat = []
+            result = runBrowserAgent(plan, userInput)
+            emit(result)
+
+            globalState.orchestratorChat.append({
+                "role": "user",
+                "content": f"SYSTEM UPDATE: Browser agent completed the task. Result: {result}"
+            })
+
         elif targetAgent == "conversational":
-            print(f"\n🧵: {directResponse}\n")
-            
+            emit(directResponse)
+
         else:
-            print(f"\n🧵 Orchestrator: I need the {targetAgent} to do this, but it is offline.\n")
+            emit(f"I need the {targetAgent} to do this, but it is offline.")
 
     except Exception as e:
         logging.error(f"Orchestrator failed to route the task: {e}")

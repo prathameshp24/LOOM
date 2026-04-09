@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>L.O.O.M.</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="nav-logo">
+      <span class="logo-icon">🧵</span>
+      <span class="logo-text">L.O.O.M.</span>
+    </div>
+    <div class="nav-links">
+      <a href="#" class="nav-link active">Home</a>
+      <a href="#" class="nav-link muted">Agenda</a>
+      <a href="#" class="nav-link muted">Jobs</a>
+      <a href="#" class="nav-link muted">Prompts</a>
+    </div>
+    <div class="nav-right">
+      <button class="wake-toggle" id="wakeToggle" title="Toggle wake word detection ('Hey Jarvis')">
+        <svg class="wake-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path class="wake-ring wake-ring-1" d="M6.3 6.3a8 8 0 0 0 0 11.4"></path>
+          <path class="wake-ring wake-ring-2" d="M17.7 6.3a8 8 0 0 1 0 11.4"></path>
+          <path class="wake-ring wake-ring-3" d="M3.5 3.5a14 14 0 0 0 0 17"></path>
+          <path class="wake-ring wake-ring-4" d="M20.5 3.5a14 14 0 0 1 0 17"></path>
+        </svg>
+        <span id="wakeLabel">Wake</span>
+      </button>
+      <button class="voice-toggle" id="voiceToggle" title="Toggle voice output (TTS)">
+        <svg class="voice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <path class="voice-wave" d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+          <path class="voice-wave" d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+        </svg>
+        <span class="voice-label" id="voiceLabel">Voice</span>
+      </button>
+      <button class="mode-toggle" id="modeToggle" title="Switch between Cloud and Local model">
+        <span class="mode-icon">☁️</span>
+        <span class="mode-label" id="modeLabel">Cloud</span>
+      </button>
+      <span class="status-dot"></span>
+      <span class="status-label">ONLINE</span>
+    </div>
+  </nav>
+
+  <!-- Main content -->
+  <main class="main">
+
+    <!-- Aurora background blobs -->
+    <div class="aurora">
+      <div class="aurora-blob blob-1"></div>
+      <div class="aurora-blob blob-2"></div>
+      <div class="aurora-blob blob-3"></div>
+    </div>
+
+    <!-- Hero (shown before first message) -->
+    <section class="hero" id="hero">
+      <div class="hero-logo">
+        <div class="gem gem-1"></div>
+        <div class="gem gem-2"></div>
+        <div class="gem gem-3"></div>
+        <div class="gem gem-4"></div>
+      </div>
+      <div class="hero-greeting">
+        <h1 class="greeting-text">Hi! I'm L.O.O.M.<span class="cursor">|</span></h1>
+        <p class="greeting-sub">Layered Orchestration &amp; Operational Mind</p>
+      </div>
+    </section>
+
+    <!-- Chat history (hidden initially) -->
+    <section class="chat-history" id="chatHistory"></section>
+
+    <!-- Status hint -->
+    <div class="status-hint" id="statusHint"></div>
+
+  </main>
+
+  <!-- Input bar -->
+  <footer class="input-bar">
+    <form class="input-form" id="inputForm" autocomplete="off">
+      <input
+        type="text"
+        id="taskInput"
+        class="task-input"
+        placeholder="Give me a task..."
+        spellcheck="false"
+      />
+      <button type="button" class="mic-btn" id="micBtn" title="Hold to record">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="9" y="2" width="6" height="12" rx="3"></rect>
+          <path d="M5 10a7 7 0 0 0 14 0"></path>
+          <line x1="12" y1="19" x2="12" y2="22"></line>
+          <line x1="8"  y1="22" x2="16" y2="22"></line>
+        </svg>
+      </button>
+      <button type="submit" class="send-btn" id="sendBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+      </button>
+    </form>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

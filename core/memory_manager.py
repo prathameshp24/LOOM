@@ -1,5 +1,6 @@
 import logging
 import uuid
+from functools import lru_cache
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from core.state import globalState
@@ -23,14 +24,13 @@ except Exception:
     )
 
 
+@lru_cache(maxsize=256)
 def getEmbedding(text: str) -> list[float]:
-    """Translates text into a mathematical vector using Gemini"""
-
+    """Translates text into a mathematical vector using Gemini. Result is cached."""
     response = globalState.geminiClient.models.embed_content(
         model="gemini-embedding-001",
         contents=text
     )
-
     return response.embeddings[0].values
 
 
@@ -83,6 +83,53 @@ def recallFact(query: str) -> str:
     except Exception as e:
         return f"Failed to search memory: {e}"
     
+
+def rememberSongToStorage(track_name: str, artist: str, uri: str) -> str:
+    """Internal: saves a recommended song to Qdrant with its Spotify URI"""
+    try:
+        vector = getEmbedding(f"{track_name} by {artist}")
+        qdrant.upsert(
+            collection_name=COLLECTION_NAME,
+            points=[
+                models.PointStruct(
+                    id=str(uuid.uuid4()),
+                    vector=vector,
+                    payload={
+                        "topic": "loom_recommended_song",
+                        "fact": f"{track_name} | {artist} | {uri}"
+                    }
+                )
+            ]
+        )
+        return f"Saved to memory: {track_name} by {artist}"
+    except Exception as e:
+        return f"Failed to save song: {e}"
+
+
+def getAllRememberedSongs() -> list[dict]:
+    """Returns all recommended songs stored in memory as list of {name, artist, uri}"""
+    try:
+        points, _ = qdrant.scroll(
+            collection_name=COLLECTION_NAME,
+            scroll_filter=models.Filter(
+                must=[models.FieldCondition(
+                    key="topic",
+                    match=models.MatchValue(value="loom_recommended_song")
+                )]
+            ),
+            limit=200,
+            with_payload=True
+        )
+        songs = []
+        for point in points:
+            parts = point.payload.get("fact", "").split(" | ")
+            if len(parts) == 3:
+                songs.append({"name": parts[0], "artist": parts[1], "uri": parts[2]})
+        return songs
+    except Exception as e:
+        logging.error(f"Failed to retrieve remembered songs: {e}")
+        return []
+
 
 def getImplicitContext(query: str) -> str:
     """Silently fetches relevant context for the orchestrator. Unlike recall_fact, this returns a hidden system string or empty string"""

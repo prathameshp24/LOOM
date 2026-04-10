@@ -1,12 +1,14 @@
 import logging
 import json
 import re
+import time
 from google import genai
 
 from core.state import globalState
 from agents.desktop_agent.agent import runDesktopAgent
 from agents.browser_agent.agent import runBrowserAgent
 from core.memory_manager import getImplicitContext
+from core.training_logger import log_orchestrator
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
@@ -116,6 +118,7 @@ def processUserRequest(userInput: str, emit=print):
             call_kwargs["extra_body"] = {"think": False}
 
         logging.info(f"🌐 [{globalState.mode.upper()}] Orchestrator → {globalState.orchestratorModel}")
+        _t0 = time.monotonic()
         response = globalState.activeClient.chat.completions.create(**call_kwargs)
 
         if getattr(response, 'choices', None) is None or not response.choices:
@@ -156,12 +159,22 @@ def processUserRequest(userInput: str, emit=print):
             decision = json.loads(raw_text)
         except json.JSONDecodeError:
             decision = {}
-        
+
         if not decision:
             logging.error("Model returned invalid empty JSON.")
             emit("I lost my train of thought. Can you rephrase that?")
             return
 
+        _latency_ms = int((time.monotonic() - _t0) * 1000)
+        log_orchestrator(
+            user_input=userInput,
+            memory_context=implicitContext,
+            habit_context=habitContext,
+            decision=decision,
+            latency_ms=_latency_ms,
+            model=globalState.orchestratorModel,
+            mode=globalState.mode,
+        )
 
         targetAgent = decision.get("target_agent")
         plan = decision.get("plan")

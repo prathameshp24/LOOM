@@ -1,7 +1,9 @@
 import logging
 import re
+import time
 from tools.registry import get_openai_tools, get_tools_for_plan, getToolByName
 from core.state import globalState
+from core.training_logger import log_desktop
 import json
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
@@ -35,7 +37,9 @@ def runDesktopAgent(plan: str, userInput: str = "") -> str:
         availableTools = get_openai_tools(focused)
     else:
         availableTools = get_openai_tools()
-    
+
+    _t0 = time.monotonic()
+    _tool_sequence: list[dict] = []
 
     MAX_ITERATIONS = 10
     for _iteration in range(MAX_ITERATIONS):
@@ -51,18 +55,20 @@ def runDesktopAgent(plan: str, userInput: str = "") -> str:
             )
 
             message = response.choices[0].message
-
             globalState.desktopChat.append(message)
 
             if not message.tool_calls:
-                return _strip_thinking(message.content) or "Task completed silently"
-            
+                final = _strip_thinking(message.content) or "Task completed silently"
+                log_desktop(plan, _tool_sequence, final,
+                            int((time.monotonic() - _t0) * 1000),
+                            globalState.desktopModel, globalState.mode)
+                return final
+
             for toolCall in message.tool_calls:
                 toolName = toolCall.function.name
 
                 try:
                     arguments = json.loads(toolCall.function.arguments)
-
                 except json.JSONDecodeError:
                     arguments = {}
 
@@ -74,12 +80,12 @@ def runDesktopAgent(plan: str, userInput: str = "") -> str:
                     try:
                         result = targetFunction(**arguments)
                         toolResult = str(result)
-
                     except Exception as e:
                         toolResult = f"Error executing tool : {e}"
-                
                 else:
                     toolResult = f"Error: {toolName} not found"
+
+                _tool_sequence.append({"name": toolName, "args": arguments, "result": toolResult})
 
                 globalState.desktopChat.append({
                     "role": "tool",
@@ -87,11 +93,19 @@ def runDesktopAgent(plan: str, userInput: str = "") -> str:
                     "name": toolName,
                     "content": toolResult
                 })
-            
+
             # The loop goes back to the top to send the results to the AI!
-            
+
         except Exception as e:
             logging.error(f"Desktop agent error: {str(e)}")
-            return f"Desktop agent encountered an error: {str(e)}"
+            err = f"Desktop agent encountered an error: {str(e)}"
+            log_desktop(plan, _tool_sequence, err,
+                        int((time.monotonic() - _t0) * 1000),
+                        globalState.desktopModel, globalState.mode)
+            return err
 
-    return "Desktop agent reached the iteration limit."
+    limit_msg = "Desktop agent reached the iteration limit."
+    log_desktop(plan, _tool_sequence, limit_msg,
+                int((time.monotonic() - _t0) * 1000),
+                globalState.desktopModel, globalState.mode)
+    return limit_msg

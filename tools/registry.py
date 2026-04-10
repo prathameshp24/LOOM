@@ -11,6 +11,7 @@ from tools.system.dbus_media import (
 from tools.system.time_alarms import getCurrentTime, setTimer
 from tools.fs.search import readFile, findFiles
 from core.memory_manager import rememberFact, recallFact
+from tools.habits import logHabitTool, getHabitStatus, createHabitTool
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
@@ -22,6 +23,7 @@ LOOM_TOOLS = [
     getCurrentTime, setTimer,
     findFiles, readFile,
     rememberFact, recallFact,
+    logHabitTool, getHabitStatus, createHabitTool,
     saveCurrentSongToMemory, listRememberedSongs, createPlaylistFromMemory,
     getUserPlaylists, playUserPlaylist,
 ]
@@ -37,6 +39,7 @@ TOOL_CATEGORIES = {
     "files":    [findFiles, readFile],
     "time":     [getCurrentTime, setTimer],
     "memory":   [rememberFact, recallFact],
+    "habits":   [logHabitTool, getHabitStatus, createHabitTool],
 }
 
 # Keywords that map text → category (checked in priority order)
@@ -51,6 +54,9 @@ _CATEGORY_KEYWORDS = [
                   "running", "app", "application"]),
     ("files",    ["file", "find", "read", "document", "folder", "search files"]),
     ("time",     ["time", "timer", "alarm", "remind", "clock", "seconds", "minutes", "hours"]),
+    ("habits",   ["habit", "meditat", "workout", "work out", "exercise", "streak",
+                  "log my", "checked", "logged", "track", "gym", "ran", "yoga",
+                  "journal", "did i", "have i", "on track", "sessions"]),
     ("memory",   ["remember", "recall", "memory", "fact", "save", "know", "memorize"]),
 ]
 

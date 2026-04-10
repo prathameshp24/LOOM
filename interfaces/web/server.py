@@ -3,10 +3,11 @@ import json
 import sys
 import os
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from typing import Optional
 from sse_starlette.sse import EventSourceResponse
 
 # Ensure project root is on path when run as a module
@@ -135,6 +136,64 @@ async def chat(req: ChatRequest):
                 yield {"event": "message", "data": json.dumps({"text": item})}
 
     return EventSourceResponse(generator())
+
+
+@app.get("/habits")
+async def habits_page():
+    return FileResponse(os.path.join(STATIC_DIR, "habits.html"))
+
+
+# ── Habit endpoints ───────────────────────────────────────────────────────────
+
+class HabitCreate(BaseModel):
+    name: str
+    description: str = ""
+    color: str = "#00d4ff"
+    frequency_per_week: int = 7
+    goal_days: Optional[int] = None
+
+
+class CheckinRequest(BaseModel):
+    note: str = ""
+
+
+@app.get("/api/habits")
+async def list_habits():
+    from core.habit_manager import getAllHabits
+    return await asyncio.to_thread(getAllHabits)
+
+
+@app.post("/api/habits")
+async def create_habit(req: HabitCreate):
+    from core.habit_manager import createHabit
+    try:
+        habit = await asyncio.to_thread(
+            createHabit, req.name, req.description, req.color,
+            req.frequency_per_week, req.goal_days
+        )
+        return habit
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@app.post("/api/habits/{habit_id}/checkin")
+async def checkin_habit(habit_id: int, req: CheckinRequest):
+    from core.habit_manager import logHabitById
+    result = await asyncio.to_thread(logHabitById, habit_id, req.note)
+    return {"message": result}
+
+
+@app.delete("/api/habits/{habit_id}")
+async def delete_habit(habit_id: int):
+    from core.habit_manager import deleteHabitById
+    await asyncio.to_thread(deleteHabitById, habit_id)
+    return {"ok": True}
+
+
+@app.get("/api/habits/{habit_id}/logs")
+async def get_habit_logs(habit_id: int):
+    from core.habit_manager import getHabitLogs
+    return await asyncio.to_thread(getHabitLogs, habit_id, 14)
 
 
 # Serve static files and fallback to index.html

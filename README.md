@@ -75,7 +75,7 @@ User Input (Web UI / CLI / Wake Word / Mic Button)
 | `conversational` | ✅ Live | Direct chat, no tool use, memory-aware |
 | `coding_agent` | 🔜 Planned | Write + run Python in a sandboxed workspace |
 
-### Desktop Tools (27 total)
+### Desktop Tools (30 total)
 
 | Category | Tools |
 |----------|-------|
@@ -86,6 +86,7 @@ User Input (Web UI / CLI / Wake Word / Mic Button)
 | Files | `findFiles`, `readFile` |
 | Time | `getCurrentTime`, `setTimer` |
 | Memory | `rememberFact`, `recallFact` |
+| Habits | `logHabitTool`, `getHabitStatus`, `createHabitTool` |
 
 ### Browser Tools (6 total)
 
@@ -108,6 +109,31 @@ User Input (Web UI / CLI / Wake Word / Mic Button)
 | Voice mode | ✅ Live | Toggle in navbar — every response spoken aloud |
 | Wake word | ✅ Live | OpenWakeWord `hey_jarvis` model, background thread |
 
+### Habit Tracker
+
+LOOM tracks daily and weekly habits with streaks, goals, and history. Accessible at `/habits` in the web UI and conversationally through chat.
+
+```
+You: "I just did DSA today"
+LOOM → desktop_agent → logHabitTool("DSA") → "Logged. 2/3 this week. Streak: 1 week."
+
+You: "Track DSA practice 3 times a week, goal 21 sessions"
+LOOM → desktop_agent → createHabitTool("DSA practice", frequency_per_week=3, goal_days=21)
+
+You: "How's my DSA streak?"
+LOOM → getHabitStatus("DSA") → answers conversationally from habit context
+```
+
+**Storage:** SQLite at `loom_db/habits.sqlite` — separate from the vector DB.
+
+**Auto-context injection:** When any message is habit-related (contains "workout", "meditated", "streak", "did I", etc.), `getHabitContextForOrchestrator()` runs a SQLite query and prepends a `[SYSTEM HABIT CONTEXT: ...]` block to the orchestrator prompt — no embedding call needed.
+
+**Habit page** (`/habits`): Cards showing streak, weekly progress badge (`2/3 this week`), goal progress bar, and inline history toggle. Add, check in, and delete habits from the UI.
+
+**Streak logic:**
+- Daily habits: consecutive day streak
+- Sub-daily (e.g. 3×/week): consecutive weeks where target was met
+
 ### Memory System
 
 LOOM uses a Qdrant vector DB for long-term, semantic memory.
@@ -125,6 +151,7 @@ LOOM uses a Qdrant vector DB for long-term, semantic memory.
 - **Voice toggle** — speaker icon in navbar, turns purple when ON (responses spoken aloud)
 - **Wake word toggle** — broadcast icon in navbar, turns pink and pulses when actively listening
 - **Mode toggle** — switch Cloud ↔ Local at runtime, context is cleared on switch
+- **Habits page** (`/habits`) — dedicated habit tracker: cards, streaks, check-ins, goal progress bars, inline history
 
 ---
 
@@ -287,9 +314,10 @@ l.o.o.m/
 ├── main.py                          # CLI entry point
 │
 ├── core/
-│   ├── orchestrator.py              # Intent routing, LLM calls, memory injection
+│   ├── orchestrator.py              # Intent routing, LLM calls, memory + habit injection
 │   ├── state.py                     # Global singleton: clients, chat histories, flags
-│   └── memory_manager.py            # Qdrant, Gemini embeddings, implicit context
+│   ├── memory_manager.py            # Qdrant, Gemini embeddings, implicit context
+│   └── habit_manager.py             # SQLite habit CRUD, streak logic, context builder
 │
 ├── agents/
 │   ├── desktop_agent/agent.py       # OS execution agent (10-iter tool-call loop)
@@ -297,6 +325,7 @@ l.o.o.m/
 │
 ├── tools/
 │   ├── registry.py                  # Dynamic OpenAI schema generation + tool lookup
+│   ├── habits.py                    # logHabitTool, getHabitStatus, createHabitTool
 │   ├── system/
 │   │   ├── app_manager.py           # open_app, close_app, is_app_running
 │   │   ├── dbus_hardware.py         # brightness, volume, mute (D-Bus / wpctl)
@@ -313,7 +342,8 @@ l.o.o.m/
 │   ├── web/
 │   │   ├── server.py                # FastAPI app, SSE streaming, all API routes
 │   │   └── static/
-│   │       ├── index.html           # Single-page UI
+│   │       ├── index.html           # Home — chat UI
+│   │       ├── habits.html          # Habits page — tracker, cards, history
 │   │       ├── app.js               # SSE client, mic, wake/voice toggles
 │   │       └── style.css            # Dark theme, aurora, markdown styles
 │   └── voice/
@@ -361,6 +391,13 @@ l.o.o.m/
 "Find all Python files modified today in my Documents folder"
 "Read the file ~/notes/ideas.txt"
 
+# Habits
+"Track DSA practice 3 times a week, goal 21 sessions"
+"I just meditated"
+"Did I work out today?"
+"How's my DSA streak?"
+"What are my habits?"
+
 # Memory
 "Remember that my standup is every day at 10am"
 "Remember I prefer dark roast coffee"
@@ -374,6 +411,7 @@ l.o.o.m/
 
 ### Next
 
+- [ ] **Async orchestrator** — Convert `processUserRequest` to `async def`. Currently runs in a thread pool, blocking the event loop. Enables parallel tool execution via `asyncio.gather()` and a proper stop button.
 - [ ] **Tool call trace UI** — Collapsible steps inside the LOOM bubble showing which tools ran and what they returned. Emit `__tool__` / `__tool_result__` SSE prefixes; JS renders them.
 - [ ] **Jobs page** — `/jobs` view with history of every task: input, agent used, tools called, result, timing.
 - [ ] **Retry + backoff** — Exponential backoff on all LLM calls. Currently a failed API call silently returns nothing.
@@ -383,9 +421,9 @@ l.o.o.m/
 ### Medium term
 
 - [ ] **Task state machine** — `Task` object: `pending → running → done/failed`. Enables job history, retry, cancellation, and a stop button in the UI.
-- [ ] **Async orchestrator** — Convert `processUserRequest` to `async def`. Enables parallel tool execution via `asyncio.gather()`.
 - [ ] **Stop button** — Cancel an in-flight request without killing the server.
 - [ ] **Base agent class** — `BaseAgent` with shared retry logic, tool-call loop, and structured step emission. `DesktopAgent` and `BrowserAgent` inherit.
+- [ ] **Habit analytics** — Weekly summary: energy patterns by time of day, productivity scores, goal alignment ("are you doing enough?"). Feeds into the life-profiling vision.
 
 ### Long-term — always-on background companion
 

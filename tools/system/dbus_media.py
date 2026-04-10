@@ -169,7 +169,7 @@ def playUri(uri: str)->bool:
 
 
 def searchAndPlay(query: str, searchType: str = "track")->bool:
-    """This is the entry point for LOOM to play a query"""
+    """Search Spotify and play the result. searchType must be one of: 'track', 'album', 'artist', 'playlist'. Defaults to 'track'."""
     logging.info(f"Agent requested to play : {query}")
     uri = searchSpotifyUri(query, searchType)
     if uri:

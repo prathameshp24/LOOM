@@ -12,6 +12,16 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 client = genai.Client()
 
+_HABIT_KEYWORDS = {
+    "habit", "meditat", "workout", "work out", "exercise", "streak",
+    "gym", "ran", "yoga", "journal", "log my", "track",
+    "did i", "have i", "on track", "sessions", "week streak", "day streak",
+}
+
+def _is_habit_related(text: str) -> bool:
+    lower = text.lower()
+    return any(kw in lower for kw in _HABIT_KEYWORDS)
+
 _COMPLEX_KEYWORDS = {
     "and then", "after that", "while", "simultaneously", "at the same time",
     "multiple", "both", "schedule", "remind me", "set up", "automate",
@@ -40,9 +50,14 @@ Currently available agents:
 3. "coding_agent": (OFFLINE)
 4. "conversational": Use this if the user is just chatting, asking a question that doesn't require physical desktop actions, or asking about past actions.
 
-CRITICAL MEMORY RULE: 
+CRITICAL MEMORY RULE:
 - If the user explicitly asks you to SAVE or REMEMBER a new fact, route to `desktop_agent` to use the `rememberFact` tool.
 - If a [SYSTEM MEMORY: ...] block is provided in the user's prompt, use that information to fulfill their request immediately without asking the desktop_agent to search for it!
+
+HABIT RULE:
+- If a [SYSTEM HABIT CONTEXT: ...] block is present, use it to answer habit questions conversationally without calling a tool.
+- If the user says they completed a habit (meditated, worked out, ran, did DSA, etc.), route to `desktop_agent` with a plan to call `logHabitTool`.
+- If the user asks to create or start tracking a new habit, route to `desktop_agent` to call `createHabitTool`.
 
 Respond strictly in json format matching this structure : 
 {
@@ -57,11 +72,19 @@ def processUserRequest(userInput: str, emit=print):
     emit("__status__Thinking...")
 
     implicitContext = getImplicitContext(userInput)
-
     if implicitContext:
         logging.info(f"Subconscious memory triggered: {implicitContext}")
-        augmentedPrompt = f"{implicitContext}\n\nUser Request: {userInput}"
-    
+
+    habitContext = ""
+    if _is_habit_related(userInput):
+        from core.habit_manager import getHabitContextForOrchestrator
+        habitContext = getHabitContextForOrchestrator()
+        if habitContext:
+            logging.info(f"Habit context injected: {habitContext[:80]}...")
+
+    contextParts = [c for c in [implicitContext, habitContext] if c]
+    if contextParts:
+        augmentedPrompt = "\n".join(contextParts) + f"\n\nUser Request: {userInput}"
     else:
         augmentedPrompt = userInput
 

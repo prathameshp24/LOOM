@@ -11,6 +11,12 @@ const voiceToggle = document.getElementById('voiceToggle');
 const voiceLabel  = document.getElementById('voiceLabel');
 const wakeToggle  = document.getElementById('wakeToggle');
 const wakeLabel   = document.getElementById('wakeLabel');
+const dagPanel    = document.getElementById('dagPanel');
+const dagSteps    = document.getElementById('dagSteps');
+const dagTools    = document.getElementById('dagTools');
+const dagDivider  = document.getElementById('dagDivider');
+const dagClose    = document.getElementById('dagClose');
+const dagAgentLabel = document.getElementById('dagAgentLabel');
 
 /* ── Mode toggle ─────────────────────────────────────────── */
 
@@ -120,6 +126,62 @@ let firstMessage = true;
 let currentLoomBubble = null;
 let currentLoomText = '';
 
+/* ── DAG panel ───────────────────────────────────────────────── */
+
+let dagState = { steps: [], toolCount: 0 };
+
+function setDagStep(idx) {
+  dagSteps.querySelectorAll('.dag-node').forEach((n, i) => {
+    if (i < idx) n.dataset.status = 'done';
+    else if (i === idx) n.dataset.status = 'active';
+    else n.dataset.status = 'pending';
+  });
+}
+
+function initDag({ steps, agent }) {
+  dagState = { steps, toolCount: 0 };
+  dagAgentLabel.textContent = agent.replace(/_/g, ' ');
+  dagSteps.innerHTML = steps.map((s, i) => `
+    <div class="dag-node" id="dag-node-${i}" data-status="pending">
+      <div class="dag-dot"></div>
+      <div class="dag-step-text">${s}</div>
+    </div>
+    ${i < steps.length - 1 ? '<div class="dag-connector"></div>' : ''}
+  `).join('');
+  dagTools.innerHTML = '';
+  dagDivider.style.display = 'none';
+  dagPanel.classList.remove('hidden');
+  document.querySelector('.main').classList.add('dag-open');
+  setDagStep(0);
+}
+
+function addDagTool({ name, result }) {
+  dagState.toolCount++;
+  const stepIdx = Math.min(dagState.toolCount - 1, dagState.steps.length - 1);
+  setDagStep(stepIdx);
+  dagDivider.style.display = 'block';
+  const el = document.createElement('div');
+  el.className = 'dag-tool-entry';
+  el.innerHTML = `<span class="dag-tool-name">${name}</span><span class="dag-tool-result">${escapeHtml(String(result))}</span>`;
+  dagTools.appendChild(el);
+  dagTools.scrollTop = dagTools.scrollHeight;
+}
+
+function completeDag() {
+  dagSteps.querySelectorAll('.dag-node').forEach(n => { n.dataset.status = 'done'; });
+}
+
+function hideDag() {
+  dagPanel.classList.add('hidden');
+  document.querySelector('.main').classList.remove('dag-open');
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+dagClose.addEventListener('click', hideDag);
+
 /* ── Helpers ─────────────────────────────────────────────── */
 
 function hideHero() {
@@ -199,6 +261,7 @@ form.addEventListener('submit', async (e) => {
 
   input.value = '';
   appendUserMsg(msg);
+  hideDag();
 
   // Create LOOM bubble and lock UI
   currentLoomBubble = createLoomBubble();
@@ -263,6 +326,12 @@ form.addEventListener('submit', async (e) => {
 function handleSSEEvent(event, data) {
   if (event === 'status') {
     setStatus(data);
+  } else if (event === 'dag') {
+    try {
+      const parsed = JSON.parse(data);
+      if (parsed.type === 'init') initDag(parsed);
+      else if (parsed.type === 'tool') addDagTool(parsed);
+    } catch { /* ignore malformed dag events */ }
   } else if (event === 'message') {
     try {
       const parsed = JSON.parse(data);
@@ -278,6 +347,7 @@ function handleSSEEvent(event, data) {
       const body = currentLoomBubble.querySelector('.msg-body');
       body.textContent = 'Done.';
     }
+    if (!dagPanel.classList.contains('hidden')) completeDag();
     clearStatus();
   }
 }

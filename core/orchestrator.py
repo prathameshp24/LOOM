@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import json
 import re
@@ -42,6 +43,13 @@ def _strip_thinking(text: str) -> str:
     """Remove <think>...</think> blocks emitted by local Qwen3 reasoning."""
     return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
 
+def _parse_plan_steps(plan: str) -> list[str]:
+    """Extract ordered steps from a 'Step 1: ... Step 2: ...' plan string."""
+    steps = re.findall(r'Step\s+\d+[:.]\s*(.+?)(?=\s*Step\s+\d+|$)', plan, re.DOTALL | re.IGNORECASE)
+    if steps:
+        return [s.strip().rstrip(',') for s in steps if s.strip()]
+    return [l.strip() for l in plan.split('\n') if l.strip()] or [plan]
+
 ORCHESTRATOR_PROMPT = """
 You are the master orchestrator for L.O.O.M.
 Your job is to analyze the user's request, create a step by step plan and route it to the correct specialized agent.
@@ -69,18 +77,18 @@ Respond strictly in json format matching this structure :
 }
 """
 
-def processUserRequest(userInput: str, emit=print):
+async def processUserRequest(userInput: str, emit=print):
     logging.info("🧠 Orchestrator is thinking deeply...")
     emit("__status__Thinking...")
 
-    implicitContext = getImplicitContext(userInput)
+    implicitContext = await asyncio.to_thread(getImplicitContext, userInput)
     if implicitContext:
         logging.info(f"Subconscious memory triggered: {implicitContext}")
 
     habitContext = ""
     if _is_habit_related(userInput):
         from core.habit_manager import getHabitContextForOrchestrator
-        habitContext = getHabitContextForOrchestrator()
+        habitContext = await asyncio.to_thread(getHabitContextForOrchestrator)
         if habitContext:
             logging.info(f"Habit context injected: {habitContext[:80]}...")
 
@@ -119,7 +127,9 @@ def processUserRequest(userInput: str, emit=print):
 
         logging.info(f"🌐 [{globalState.mode.upper()}] Orchestrator → {globalState.orchestratorModel}")
         _t0 = time.monotonic()
-        response = globalState.activeClient.chat.completions.create(**call_kwargs)
+        response = await asyncio.to_thread(
+            globalState.activeClient.chat.completions.create, **call_kwargs
+        )
 
         if getattr(response, 'choices', None) is None or not response.choices:
             logging.error("OpenRouter API Glitch: Returned null/empty choices. Model overloaded.")
@@ -186,8 +196,11 @@ def processUserRequest(userInput: str, emit=print):
         # 5. Route to the specialized agents
         if targetAgent == "desktop_agent":
             emit("__status__Running on desktop...")
+            steps = _parse_plan_steps(plan) if plan else []
+            if steps:
+                emit(f"__dag__{json.dumps({'type': 'init', 'steps': steps, 'agent': targetAgent})}")
             globalState.desktopChat = []  # fresh context per task — orchestrator plan is self-contained
-            result = runDesktopAgent(plan, userInput)
+            result = await runDesktopAgent(plan, userInput, emit=emit)
             emit(result)
 
             # CRITICAL: Tell OpenRouter what the Gemini hands just did
@@ -198,8 +211,11 @@ def processUserRequest(userInput: str, emit=print):
 
         elif targetAgent == "browser_agent":
             emit("__status__Browsing the web...")
+            steps = _parse_plan_steps(plan) if plan else []
+            if steps:
+                emit(f"__dag__{json.dumps({'type': 'init', 'steps': steps, 'agent': targetAgent})}")
             globalState.browserChat = []
-            result = runBrowserAgent(plan, userInput)
+            result = await runBrowserAgent(plan, userInput, emit=emit)
             emit(result)
 
             globalState.orchestratorChat.append({

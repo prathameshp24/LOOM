@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import json
 import re
@@ -34,7 +35,7 @@ def _strip_thinking(text: str) -> str:
     return re.sub(r'<think>.*?</think>', '', text or '', flags=re.DOTALL).strip()
 
 
-def runBrowserAgent(plan: str, userInput: str = "") -> str:
+async def runBrowserAgent(plan: str, userInput: str = "", emit=None) -> str:
     """Executes a browser-based research or automation plan."""
     logging.info("🌐 Browser Agent activated")
 
@@ -51,7 +52,8 @@ def runBrowserAgent(plan: str, userInput: str = "") -> str:
         try:
             extra = {"think": False} if globalState.mode == "local" else {}
             logging.info(f"🌐 [{globalState.mode.upper()}] Browser → {globalState.desktopModel} (iter {iteration + 1}/{MAX_ITERATIONS})")
-            response = globalState.activeClient.chat.completions.create(
+            response = await asyncio.to_thread(
+                globalState.activeClient.chat.completions.create,
                 model=globalState.desktopModel,
                 messages=globalState.browserChat,
                 tools=available_tools,
@@ -74,12 +76,18 @@ def runBrowserAgent(plan: str, userInput: str = "") -> str:
                 logging.info(f"🌐 Browser tool: {name}({args})")
 
                 fn = tool_map.get(name)
-                result = fn(**args) if fn else f"Error: tool '{name}' not found"
+                if fn:
+                    result = await asyncio.to_thread(fn, **args)
+                else:
+                    result = f"Error: tool '{name}' not found"
 
                 # Truncate large tool results to keep context from bloating
                 content = str(result)
                 if len(content) > 2000:
                     content = content[:2000] + "\n...[truncated]"
+
+                if emit:
+                    emit(f"__dag__{json.dumps({'type': 'tool', 'name': name, 'result': content[:120]})}")
 
                 globalState.browserChat.append({
                     "role": "tool",

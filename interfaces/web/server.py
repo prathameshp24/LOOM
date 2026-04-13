@@ -103,17 +103,16 @@ async def set_wake_word(req: VoiceModeRequest):
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     queue: asyncio.Queue = asyncio.Queue()
-    loop = asyncio.get_running_loop()
     accumulated_text: list[str] = []
 
     def emit(msg: str):
-        if not msg.startswith("__status__") and msg.strip():
+        if not msg.startswith("__") and msg.strip():
             accumulated_text.append(msg)
-        loop.call_soon_threadsafe(queue.put_nowait, msg)
+        queue.put_nowait(msg)
 
     async def run_and_signal():
         try:
-            await asyncio.to_thread(processUserRequest, req.message, emit)
+            await processUserRequest(req.message, emit)
             if globalState.voiceMode and accumulated_text:
                 from interfaces.voice.tts_piper import speak
                 speak(" ".join(accumulated_text))  # Popen → non-blocking
@@ -132,6 +131,8 @@ async def chat(req: ChatRequest):
                 break
             if item.startswith("__status__"):
                 yield {"event": "status", "data": item[len("__status__"):]}
+            elif item.startswith("__dag__"):
+                yield {"event": "dag", "data": item[len("__dag__"):]}
             else:
                 yield {"event": "message", "data": json.dumps({"text": item})}
 

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import time
@@ -21,7 +22,7 @@ Do not make up tools. If a tool fails, report it.
 
 
 
-def runDesktopAgent(plan: str, userInput: str = "") -> str:
+async def runDesktopAgent(plan: str, userInput: str = "", emit=None) -> str:
     """Executes the specific desktop related plan"""
     logging.info("🖥️ Desktop Agent Took the control of execution")
 
@@ -46,7 +47,8 @@ def runDesktopAgent(plan: str, userInput: str = "") -> str:
         try:
             logging.info(f"🖥️ [{globalState.mode.upper()}] Desktop → {globalState.desktopModel}")
             extra = {"think": False} if globalState.mode == "local" else {}
-            response = globalState.activeClient.chat.completions.create(
+            response = await asyncio.to_thread(
+                globalState.activeClient.chat.completions.create,
                 model=globalState.desktopModel,
                 messages=globalState.desktopChat,
                 tools=availableTools,
@@ -78,7 +80,7 @@ def runDesktopAgent(plan: str, userInput: str = "") -> str:
 
                 if targetFunction:
                     try:
-                        result = targetFunction(**arguments)
+                        result = await asyncio.to_thread(targetFunction, **arguments)
                         toolResult = str(result)
                     except Exception as e:
                         toolResult = f"Error executing tool : {e}"
@@ -86,6 +88,9 @@ def runDesktopAgent(plan: str, userInput: str = "") -> str:
                     toolResult = f"Error: {toolName} not found"
 
                 _tool_sequence.append({"name": toolName, "args": arguments, "result": toolResult})
+
+                if emit:
+                    emit(f"__dag__{json.dumps({'type': 'tool', 'name': toolName, 'result': toolResult[:120]})}")
 
                 globalState.desktopChat.append({
                     "role": "tool",

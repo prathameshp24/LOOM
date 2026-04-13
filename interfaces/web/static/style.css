@@ -591,3 +591,146 @@ html, body {
   border: none; border-top: 1px solid var(--border); margin: 10px 0;
 }
 
+/* ── DAG execution panel ────────────────────────────────── */
+.dag-panel {
+  position: fixed;
+  right: 0; top: var(--nav-h); bottom: var(--input-h);
+  width: 280px;
+  background: rgba(8, 8, 16, 0.94);
+  border-left: 1px solid rgba(0, 212, 255, 0.18);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: flex; flex-direction: column;
+  z-index: 50;
+  transform: translateX(0);
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+.dag-panel.hidden {
+  transform: translateX(100%);
+}
+
+/* When DAG is open, nudge main content left */
+.main.dag-open {
+  padding-right: 280px;
+}
+
+.dag-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+}
+.dag-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+  color: var(--cyan); text-transform: uppercase;
+}
+.dag-title-icon { font-size: 13px; }
+.dag-meta {
+  display: flex; align-items: center; gap: 8px;
+}
+.dag-agent-label {
+  font-size: 10px; color: var(--muted); letter-spacing: 0.06em;
+  text-transform: capitalize;
+}
+.dag-close {
+  background: none; border: none; color: var(--muted);
+  cursor: pointer; font-size: 13px; line-height: 1;
+  padding: 2px 4px; border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+.dag-close:hover { color: var(--text); background: rgba(255,255,255,0.07); }
+
+.dag-steps {
+  padding: 14px 14px 8px;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+.dag-node {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 3px 0;
+  transition: opacity 0.2s;
+}
+.dag-node[data-status="pending"] { opacity: 0.45; }
+.dag-node[data-status="active"]  { opacity: 1; }
+.dag-node[data-status="done"]    { opacity: 0.75; }
+
+.dag-dot {
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 3px;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.dag-node[data-status="pending"] .dag-dot {
+  background: #1e1e2e;
+  border: 2px solid #444;
+}
+.dag-node[data-status="active"] .dag-dot {
+  background: var(--cyan);
+  border: none;
+  box-shadow: 0 0 8px var(--cyan);
+  animation: dagPulse 1.1s ease-in-out infinite;
+}
+.dag-node[data-status="done"] .dag-dot {
+  background: #22c55e;
+  border: none;
+}
+
+@keyframes dagPulse {
+  0%, 100% { box-shadow: 0 0 5px var(--cyan); }
+  50%       { box-shadow: 0 0 14px var(--cyan), 0 0 4px #fff4; }
+}
+
+.dag-step-text {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text);
+  flex: 1;
+}
+
+.dag-connector {
+  width: 2px; height: 14px;
+  background: rgba(255,255,255,0.08);
+  margin-left: 4.5px;
+}
+
+.dag-divider {
+  height: 1px;
+  background: rgba(255,255,255,0.06);
+  margin: 0 14px 8px;
+  flex-shrink: 0;
+}
+
+.dag-tools {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 14px 12px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.dag-tools::-webkit-scrollbar { width: 3px; }
+.dag-tools::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.dag-tool-entry {
+  font-size: 10.5px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.03);
+  border-left: 2px solid rgba(0,212,255,0.3);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.dag-tool-name {
+  color: var(--cyan);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+}
+.dag-tool-result {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}

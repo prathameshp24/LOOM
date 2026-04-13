@@ -78,6 +78,23 @@
     <!-- Status hint -->
     <div class="status-hint" id="statusHint"></div>
 
+    <!-- Execution DAG panel -->
+    <div id="dagPanel" class="dag-panel hidden">
+      <div class="dag-header">
+        <div class="dag-title">
+          <span class="dag-title-icon">⬡</span>
+          <span>Execution Plan</span>
+        </div>
+        <div class="dag-meta">
+          <span class="dag-agent-label" id="dagAgentLabel"></span>
+          <button class="dag-close" id="dagClose" title="Dismiss">✕</button>
+        </div>
+      </div>
+      <div class="dag-steps" id="dagSteps"></div>
+      <div class="dag-divider" id="dagDivider"></div>
+      <div class="dag-tools" id="dagTools"></div>
+    </div>
+
   </main>
 
   <!-- Input bar -->

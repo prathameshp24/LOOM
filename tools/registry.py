@@ -12,6 +12,7 @@ from tools.system.time_alarms import getCurrentTime, setTimer
 from tools.fs.search import readFile, findFiles
 from core.memory_manager import rememberFact, recallFact
 from tools.habits import logHabitTool, getHabitStatus, createHabitTool
+from tools.jobs import createJobTool, deleteJobTool
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
@@ -24,6 +25,7 @@ LOOM_TOOLS = [
     findFiles, readFile,
     rememberFact, recallFact,
     logHabitTool, getHabitStatus, createHabitTool,
+    createJobTool, deleteJobTool,
     saveCurrentSongToMemory, listRememberedSongs, createPlaylistFromMemory,
     getUserPlaylists, playUserPlaylist,
 ]
@@ -40,6 +42,7 @@ TOOL_CATEGORIES = {
     "time":     [getCurrentTime, setTimer],
     "memory":   [rememberFact, recallFact],
     "habits":   [logHabitTool, getHabitStatus, createHabitTool],
+    "jobs":     [createJobTool, deleteJobTool],
 }
 
 # Keywords that map text → category (checked in priority order)
@@ -58,6 +61,9 @@ _CATEGORY_KEYWORDS = [
                   "log my", "checked", "logged", "track", "gym", "ran", "yoga",
                   "journal", "did i", "have i", "on track", "sessions"]),
     ("memory",   ["remember", "recall", "memory", "fact", "save", "know", "memorize"]),
+    ("jobs",     ["schedule", "recurring", "remind me every", "every day", "every week",
+                  "every morning", "every night", "standup", "automate", "create job",
+                  "delete job", "cancel job", "remove job", "daily at", "weekly at"]),
 ]
 
 

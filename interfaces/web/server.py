@@ -22,8 +22,8 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 
 @app.on_event("startup")
-async def warmup_ollama():
-    """Pre-load Qwen3 so the first local-mode request has no model-load delay."""
+async def startup():
+    """Warm up Ollama and start the job scheduler."""
     async def _ping():
         try:
             await asyncio.to_thread(
@@ -37,6 +37,9 @@ async def warmup_ollama():
         except Exception as e:
             import logging; logging.getLogger().warning(f"⚠️  Ollama warmup skipped (not running?): {e}")
     asyncio.create_task(_ping())
+
+    from core.job_scheduler import start_scheduler
+    await asyncio.to_thread(start_scheduler)
 
 
 class ChatRequest(BaseModel):
@@ -195,6 +198,89 @@ async def delete_habit(habit_id: int):
 async def get_habit_logs(habit_id: int):
     from core.habit_manager import getHabitLogs
     return await asyncio.to_thread(getHabitLogs, habit_id, 14)
+
+
+# ── Jobs page ─────────────────────────────────────────────────────────────────
+
+@app.get("/jobs")
+async def jobs_page():
+    return FileResponse(os.path.join(STATIC_DIR, "jobs.html"))
+
+
+# ── Task runs ─────────────────────────────────────────────────────────────────
+
+@app.get("/api/task-runs")
+async def list_task_runs():
+    from core.task_logger import get_task_runs
+    return await asyncio.to_thread(get_task_runs, 50)
+
+
+@app.delete("/api/task-runs/{run_id}")
+async def delete_task_run_endpoint(run_id: int):
+    from core.task_logger import delete_task_run
+    await asyncio.to_thread(delete_task_run, run_id)
+    return {"ok": True}
+
+
+# ── Scheduled jobs ────────────────────────────────────────────────────────────
+
+class JobCreate(BaseModel):
+    name: str
+    prompt: str
+    cron: str
+    schedule_human: str
+
+
+class JobToggle(BaseModel):
+    enabled: bool
+
+
+@app.get("/api/jobs")
+async def list_jobs():
+    from core.task_logger import get_all_jobs
+    from core.job_scheduler import get_next_run
+    jobs = await asyncio.to_thread(get_all_jobs)
+    for job in jobs:
+        if job["enabled"]:
+            job["next_run_at"] = get_next_run(job["id"]) or job.get("next_run_at")
+    return jobs
+
+
+@app.post("/api/jobs")
+async def create_job_endpoint(req: JobCreate):
+    from core.task_logger import create_job
+    from core.job_scheduler import add_job_to_scheduler
+    if len(req.cron.split()) != 5:
+        raise HTTPException(status_code=400, detail="cron must be a 5-field expression")
+    try:
+        job = await asyncio.to_thread(create_job, req.name, req.prompt, req.cron, req.schedule_human)
+        await asyncio.to_thread(add_job_to_scheduler, job)
+        return job
+    except Exception as e:
+        if "UNIQUE" in str(e):
+            raise HTTPException(status_code=409, detail=f"Job '{req.name}' already exists")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/jobs/{job_id}")
+async def toggle_job_endpoint(job_id: int, req: JobToggle):
+    from core.task_logger import toggle_job
+    from core.job_scheduler import pause_job_in_scheduler, resume_job_in_scheduler
+    await asyncio.to_thread(toggle_job, job_id, req.enabled)
+    if req.enabled:
+        await asyncio.to_thread(resume_job_in_scheduler, job_id)
+    else:
+        await asyncio.to_thread(pause_job_in_scheduler, job_id)
+    return {"ok": True}
+
+
+@app.delete("/api/jobs/{job_id}")
+async def delete_job_endpoint(job_id: int):
+    from core.task_logger import delete_job
+    from core.job_scheduler import remove_job_from_scheduler
+    await asyncio.to_thread(remove_job_from_scheduler, job_id)
+    await asyncio.to_thread(delete_job, job_id)
+    return {"ok": True}
 
 
 # Serve static files and fallback to index.html

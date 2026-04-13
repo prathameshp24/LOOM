@@ -1,13 +1,13 @@
 # 🧵 L.O.O.M.
 ### Layered Orchestration & Operational Mind
 
-A voice-first, multi-agent personal AI OS built for Fedora Linux (Wayland). LOOM sits on your desktop and controls your machine through natural language — playing music, adjusting brightness, searching the web, managing files, and more. It is not a product. It is built for one user, optimized for speed and capability.
+A voice-first, multi-agent personal AI OS built for Fedora Linux (Wayland). LOOM sits on your desktop and controls your machine through natural language — playing music, adjusting brightness, searching the web, managing files, tracking habits, scheduling recurring jobs, and more. It is not a product. It is built for one user, optimized for speed and capability.
 
 ---
 
 ## What It Does
 
-You talk (or type) to LOOM. LOOM figures out what agent to use, builds a plan, executes it using real tools, and speaks the result back.
+You talk (or type) to LOOM. LOOM figures out what agent to use, builds a plan, executes it using real tools, and speaks the result back — while showing a live execution DAG in the UI.
 
 ```
 You: "Search the web for today's top AI news and summarize it"
@@ -17,6 +17,11 @@ LOOM → browser_agent → web_search → get_page_text → speaks summary aloud
 ```
 You: "Turn brightness to 40% and play something chill on Spotify"
 LOOM → desktop_agent → setBrightness(40) → searchAndPlay("chill music")
+```
+
+```
+You: "Schedule a standup summary every weekday at 10am"
+LOOM → desktop_agent → createJobTool → fires every morning, notifies + speaks result
 ```
 
 ```
@@ -39,7 +44,9 @@ User Input (Web UI / CLI / Wake Word / Mic Button)
     │  1. Query Qdrant for implicit memory        │
     │  2. Call LLM → JSON routing decision        │
     │  3. Smart reasoning: ON for complex only    │
-    │  4. Route to the right agent                │
+    │  4. Emit DAG init event with plan steps     │
+    │  5. Route to the right agent                │
+    │  6. Log task run to SQLite                  │
     └──────────────┬──────────────────────────────┘
                    │  { target_agent, plan }
           ┌────────┴────────┐
@@ -47,18 +54,27 @@ User Input (Web UI / CLI / Wake Word / Mic Button)
    desktop_agent       browser_agent
    OS, hardware,       Web search,
    Spotify, files,     page reading,
-   memory, timers      Playwright automation
+   memory, timers,     Playwright automation
+   habits, jobs
           │                 │
           ▼                 ▼
     ┌─────────────────────────────────┐
     │          TOOL REGISTRY          │
     │  tools/registry.py              │
-    │  27 tools, auto-exposed as      │
+    │  31 tools, auto-exposed as      │
     │  OpenAI function-call schema    │
+    └─────────────────────────────────┘
+          │
+          ▼
+    ┌─────────────────────────────────┐
+    │        JOB SCHEDULER            │
+    │  core/job_scheduler.py          │
+    │  APScheduler, cron-based,       │
+    │  notify-send + TTS on fire      │
     └─────────────────────────────────┘
 ```
 
-**Emit pattern:** All output goes through an `emit(msg)` callback. The same orchestrator code powers CLI (print), Web SSE, and wake word TTS — no branching needed.
+**Emit pattern:** All output goes through an `emit(msg)` callback. The same orchestrator code powers CLI (print), Web SSE, wake word TTS, and scheduled job notifications — no branching needed.
 
 **Smart routing:** The orchestrator only enables LLM reasoning tokens for complex queries (>12 words, or multi-step keywords like "and then", "schedule", "research"). Simple commands skip reasoning — ~3-4s faster.
 
@@ -70,12 +86,12 @@ User Input (Web UI / CLI / Wake Word / Mic Button)
 
 | Agent | Status | What it handles |
 |-------|--------|----------------|
-| `desktop_agent` | ✅ Live | OS, Spotify, hardware, files, memory, timers |
+| `desktop_agent` | ✅ Live | OS, Spotify, hardware, files, memory, timers, habits, jobs |
 | `browser_agent` | ✅ Live | Web search, page reading, Playwright automation |
 | `conversational` | ✅ Live | Direct chat, no tool use, memory-aware |
 | `coding_agent` | 🔜 Planned | Write + run Python in a sandboxed workspace |
 
-### Desktop Tools (30 total)
+### Desktop Tools (31 total)
 
 | Category | Tools |
 |----------|-------|
@@ -87,6 +103,7 @@ User Input (Web UI / CLI / Wake Word / Mic Button)
 | Time | `getCurrentTime`, `setTimer` |
 | Memory | `rememberFact`, `recallFact` |
 | Habits | `logHabitTool`, `getHabitStatus`, `createHabitTool` |
+| Jobs | `createJobTool`, `deleteJobTool` |
 
 ### Browser Tools (6 total)
 
@@ -104,7 +121,7 @@ User Input (Web UI / CLI / Wake Word / Mic Button)
 | Feature | Status | Details |
 |---------|--------|---------|
 | STT | ✅ Live | faster-whisper `base.en`, CPU, lazy-loaded |
-| TTS | ✅ Live | espeak-ng via subprocess, non-blocking, strips markdown |
+| TTS | ✅ Live | Piper TTS via subprocess, non-blocking, strips markdown |
 | Mic button | ✅ Live | Hold-to-record in web UI, auto-submits on release |
 | Voice mode | ✅ Live | Toggle in navbar — every response spoken aloud |
 | Wake word | ✅ Live | OpenWakeWord `hey_jarvis` model, background thread |
@@ -124,15 +141,43 @@ You: "How's my DSA streak?"
 LOOM → getHabitStatus("DSA") → answers conversationally from habit context
 ```
 
-**Storage:** SQLite at `loom_db/habits.sqlite` — separate from the vector DB.
+**Storage:** SQLite at `loom_db/habits.sqlite`.
 
-**Auto-context injection:** When any message is habit-related (contains "workout", "meditated", "streak", "did I", etc.), `getHabitContextForOrchestrator()` runs a SQLite query and prepends a `[SYSTEM HABIT CONTEXT: ...]` block to the orchestrator prompt — no embedding call needed.
+**Auto-context injection:** When any message is habit-related, `getHabitContextForOrchestrator()` prepends a `[SYSTEM HABIT CONTEXT: ...]` block to the orchestrator prompt — no embedding call needed.
 
-**Habit page** (`/habits`): Cards showing streak, weekly progress badge (`2/3 this week`), goal progress bar, and inline history toggle. Add, check in, and delete habits from the UI.
+**Habit page** (`/habits`): Cards showing streak, weekly progress badge, goal progress bar, and inline history. Add, check in, and delete habits from the UI.
 
-**Streak logic:**
-- Daily habits: consecutive day streak
-- Sub-daily (e.g. 3×/week): consecutive weeks where target was met
+### Jobs & Scheduler
+
+LOOM can schedule recurring tasks that run automatically on a cron schedule. Results are delivered via desktop notification (`notify-send`) and spoken aloud if voice mode is on.
+
+```
+You: "Schedule a standup summary every weekday at 10am"
+LOOM → desktop_agent → createJobTool("Daily Standup", prompt, "0 10 * * 1-5", ...)
+
+You: "Cancel the standup job"
+LOOM → desktop_agent → deleteJobTool("Daily Standup")
+```
+
+**Jobs page** (`/jobs`): Two sections:
+- **Scheduled Jobs** — all active cron jobs with next/last run times, enable/disable toggle, delete
+- **Run History** — every task run (manual and scheduled) with agent badge, result preview, tool call log, and duration. Expandable per run. Individually deletable.
+
+**Create from UI:** New job form with name, prompt textarea, time picker, and repeat dropdown (daily / weekdays / weekends / Monday / Friday / hourly) — auto-generates cron expression.
+
+**Storage:** SQLite at `loom_db/jobs.db` with `jobs` and `task_runs` tables. Every desktop and browser agent execution is logged automatically.
+
+**Notification on fire:** `notify-send` always fires. TTS speaks the result if voice mode is on.
+
+### Live Execution DAG
+
+Every time a task routes to an agent, a DAG panel slides in from the right showing the plan steps as nodes. Tool calls appear live as they execute, and all nodes turn green on completion.
+
+- Pending steps: gray dot
+- Active step: pulsing cyan dot
+- Completed steps: green dot
+- Tool call feed shows tool name + result snippet in real time
+- Dismiss button; hides automatically on next message
 
 ### Memory System
 
@@ -140,18 +185,20 @@ LOOM uses a Qdrant vector DB for long-term, semantic memory.
 
 - **Explicit memory:** `rememberFact(topic, fact)` stores anything you tell it. `recallFact(query)` retrieves by meaning, not exact match.
 - **Implicit context:** Before every orchestrator call, `getImplicitContext()` silently finds the 3 most relevant memories and injects them into the prompt. You don't ask — LOOM just knows.
-- **Song memory:** `saveCurrentSongToMemory()` reads D-Bus metadata for the now-playing track, finds its Spotify URI, and stores it. `createPlaylistFromMemory()` turns all saved songs into a real Spotify playlist.
-- **Embeddings:** Google Gemini `gemini-embedding-001` (3072 dimensions), LRU-cached with `@lru_cache(maxsize=256)`.
+- **Song memory:** `saveCurrentSongToMemory()` reads D-Bus metadata for the now-playing track and stores its Spotify URI. `createPlaylistFromMemory()` turns all saved songs into a real Spotify playlist.
+- **Embeddings:** Google Gemini `gemini-embedding-001` (3072 dimensions), LRU-cached.
 
 ### Web UI
 
 - Dark theme, aurora background blobs, SSE streaming responses
-- **Markdown rendering** — tables, bold, headers, code blocks, links all render correctly (via marked.js)
+- **Markdown rendering** — tables, bold, headers, code blocks, links (via marked.js)
 - **Mic button** — hold to record, release to transcribe and auto-submit
-- **Voice toggle** — speaker icon in navbar, turns purple when ON (responses spoken aloud)
-- **Wake word toggle** — broadcast icon in navbar, turns pink and pulses when actively listening
-- **Mode toggle** — switch Cloud ↔ Local at runtime, context is cleared on switch
-- **Habits page** (`/habits`) — dedicated habit tracker: cards, streaks, check-ins, goal progress bars, inline history
+- **Voice toggle** — speaker icon in navbar, turns purple when ON
+- **Wake word toggle** — broadcast icon in navbar, turns pink and pulses when listening
+- **Mode toggle** — switch Cloud ↔ Local at runtime
+- **Habits page** (`/habits`) — streak cards, check-ins, goal progress bars, inline history
+- **Jobs page** (`/jobs`) — scheduled jobs + full run history with expandable tool traces
+- **DAG panel** — live execution graph slides in during every agent task
 
 ---
 
@@ -171,17 +218,17 @@ pip install -r requirements.txt
 
 ```bash
 # Fedora / RHEL
-sudo dnf install ffmpeg espeak-ng brightnessctl
+sudo dnf install ffmpeg brightnessctl libnotify
 
 # Ubuntu / Debian
-sudo apt install ffmpeg espeak-ng brightnessctl
+sudo apt install ffmpeg brightnessctl libnotify-bin
 ```
 
 | Package | Why |
 |---------|-----|
 | `ffmpeg` | faster-whisper needs it to decode browser WebM audio |
-| `espeak-ng` | TTS engine for voice output |
-| `brightnessctl` | Screen brightness control via D-Bus |
+| `brightnessctl` | Screen brightness control |
+| `libnotify` / `notify-send` | Desktop notifications for scheduled jobs |
 
 ### 3. Install Playwright browser
 
@@ -210,7 +257,7 @@ SPOTIPY_REDIRECT_URI=http://127.0.0.1:8888/callback
 
 - **OpenRouter:** Register at [openrouter.ai](https://openrouter.ai). Free tier models are used by default.
 - **Gemini:** Get a key at [aistudio.google.com](https://aistudio.google.com). Free tier is sufficient.
-- **Spotify:** Create an app at the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard). Add `http://127.0.0.1:8888/callback` to Redirect URIs. On first run, a browser window opens for OAuth consent — this only happens once, then the token is cached at `.spotify_cache`.
+- **Spotify:** Create an app at the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard). Add `http://127.0.0.1:8888/callback` to Redirect URIs. On first run, a browser window opens for OAuth consent — this only happens once.
 
 ### 5. (Optional) Local mode with Ollama
 
@@ -223,21 +270,17 @@ ollama pull qwen3:4b
 
 ## Running
 
-### Web UI
-
 ```bash
 uvicorn interfaces.web.server:app --host 127.0.0.1 --port 8080
 ```
 
 Open `http://127.0.0.1:8080`.
 
-### CLI
-
-```bash
-python3 main.py
+On startup you'll see:
 ```
-
-Plain text loop — no voice, no streaming. Useful for testing.
+INFO: ✅ Ollama Qwen3 warmed up
+INFO: ⏰ Job scheduler started — N jobs loaded
+```
 
 ---
 
@@ -260,32 +303,22 @@ curl -X POST http://127.0.0.1:8080/api/mode \
 
 ## Voice Features
 
-### Mic button (Web UI)
-
-Hold the mic button → recording starts (red pulse animation, "Listening..." in status bar).
-Release → audio is sent to `/api/voice` → faster-whisper transcribes it → input field populates → form auto-submits.
-
-The Whisper model loads lazily on the first voice request (~3-4s). All subsequent requests are instant.
+### Mic button
+Hold the mic button → recording starts (red pulse, "Listening..." in status bar). Release → transcribed and auto-submitted.
 
 ### Voice mode (TTS)
-
-Click the speaker icon in the navbar. When active (purple), every LOOM response is spoken aloud via espeak-ng after the SSE stream completes. Markdown is stripped before speaking so bold/code/headers read naturally.
+Click the speaker icon. When active, every LOOM response is spoken aloud after the SSE stream completes. Markdown is stripped before speaking.
 
 ### Wake word
+Click the broadcast icon. Say **"Hey Jarvis"** → LOOM plays "Yes?" → speak your command → spoken response.
 
-Click the broadcast icon in the navbar. The server starts a background thread that continuously listens on the microphone.
-
-Say **"Hey Jarvis"** → LOOM plays "Yes?" → speak your command → LOOM processes it and speaks the response.
-
-The wake word model downloads from HuggingFace on first activation (~5 seconds), then is cached locally.
-
-> **On the wake phrase:** OpenWakeWord ships with `hey_jarvis`, `alexa`, `hey_mycroft`, and `hey_rhasspy`. There is no built-in "Hey LOOM" model. `hey_jarvis` is used as the default. Custom "Hey LOOM" training is on the roadmap (openwakeword supports synthetic data fine-tuning).
+The wake word model downloads from HuggingFace on first activation (~5 seconds), then cached locally.
 
 ---
 
 ## API Reference
 
-### Endpoints
+### Chat & control
 
 | Method | Route | Description |
 |--------|-------|-------------|
@@ -297,12 +330,34 @@ The wake word model downloads from HuggingFace on first activation (~5 seconds),
 | `GET` | `/api/voice-mode` | Current TTS state |
 | `POST` | `/api/wake-word` | Start/stop wake word thread. Body: `{"enabled": true}` |
 
+### Habits
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/habits` | List all habits with streak + status |
+| `POST` | `/api/habits` | Create habit |
+| `POST` | `/api/habits/{id}/checkin` | Log a check-in |
+| `DELETE` | `/api/habits/{id}` | Delete habit |
+| `GET` | `/api/habits/{id}/logs` | Last 14 check-ins |
+
+### Jobs & task runs
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/jobs` | List all scheduled jobs |
+| `POST` | `/api/jobs` | Create a job. Body: `{name, prompt, cron, schedule_human}` |
+| `PATCH` | `/api/jobs/{id}` | Toggle enabled. Body: `{"enabled": true}` |
+| `DELETE` | `/api/jobs/{id}` | Delete a job |
+| `GET` | `/api/task-runs` | Last 50 task runs |
+| `DELETE` | `/api/task-runs/{id}` | Delete a run |
+
 ### SSE event types
 
 | Event | Data | Meaning |
 |-------|------|---------|
-| `status` | Plain string | Status hint shown below chat ("Thinking...", "Browsing the web...") |
-| `message` | `{"text": "..."}` | Response text chunk to append to the bubble |
+| `status` | Plain string | Status hint shown below chat |
+| `message` | `{"text": "..."}` | Response text chunk |
+| `dag` | `{"type": "init/tool", ...}` | DAG panel update |
 | `done` | (empty) | Stream complete |
 
 ---
@@ -314,18 +369,21 @@ l.o.o.m/
 ├── main.py                          # CLI entry point
 │
 ├── core/
-│   ├── orchestrator.py              # Intent routing, LLM calls, memory + habit injection
+│   ├── orchestrator.py              # Intent routing, LLM calls, memory + habit injection, task logging
 │   ├── state.py                     # Global singleton: clients, chat histories, flags
 │   ├── memory_manager.py            # Qdrant, Gemini embeddings, implicit context
-│   └── habit_manager.py             # SQLite habit CRUD, streak logic, context builder
+│   ├── habit_manager.py             # SQLite habit CRUD, streak logic, context builder
+│   ├── task_logger.py               # SQLite task_runs + jobs tables, CRUD
+│   └── job_scheduler.py             # APScheduler wrapper, cron execution, notifications
 │
 ├── agents/
 │   ├── desktop_agent/agent.py       # OS execution agent (10-iter tool-call loop)
 │   └── browser_agent/agent.py       # Web research/automation agent (8-iter loop)
 │
 ├── tools/
-│   ├── registry.py                  # Dynamic OpenAI schema generation + tool lookup
+│   ├── registry.py                  # Dynamic OpenAI schema generation + local-mode tool filtering
 │   ├── habits.py                    # logHabitTool, getHabitStatus, createHabitTool
+│   ├── jobs.py                      # createJobTool, deleteJobTool
 │   ├── system/
 │   │   ├── app_manager.py           # open_app, close_app, is_app_running
 │   │   ├── dbus_hardware.py         # brightness, volume, mute (D-Bus / wpctl)
@@ -342,16 +400,20 @@ l.o.o.m/
 │   ├── web/
 │   │   ├── server.py                # FastAPI app, SSE streaming, all API routes
 │   │   └── static/
-│   │       ├── index.html           # Home — chat UI
-│   │       ├── habits.html          # Habits page — tracker, cards, history
-│   │       ├── app.js               # SSE client, mic, wake/voice toggles
-│   │       └── style.css            # Dark theme, aurora, markdown styles
+│   │       ├── index.html           # Home — chat UI with DAG panel
+│   │       ├── habits.html          # Habits page
+│   │       ├── jobs.html            # Jobs page — scheduled jobs + run history
+│   │       ├── app.js               # SSE client, DAG renderer, mic, toggles
+│   │       └── style.css            # Dark theme, aurora, DAG panel styles
 │   └── voice/
 │       ├── stt_whisper.py           # faster-whisper STT (lazy model load)
-│       ├── tts_piper.py             # espeak-ng TTS
+│       ├── tts_piper.py             # Piper TTS
 │       └── wake_word.py             # OpenWakeWord background detection thread
 │
-└── loom_db/                         # Qdrant vector DB (local, persisted to disk)
+└── loom_db/
+    ├── collection/                  # Qdrant vector DB (persisted to disk)
+    ├── habits.sqlite                # Habit tracking
+    └── jobs.db                      # Scheduled jobs + task run history
 ```
 
 ---
@@ -374,9 +436,7 @@ l.o.o.m/
 "What's playing right now?"
 "Skip to the next track"
 "Remember this song"
-"What songs have I saved?"
 "Create a playlist called Focus Mode from my saved songs"
-"Show all my Spotify playlists"
 
 # Time
 "What time is it?"
@@ -396,44 +456,55 @@ l.o.o.m/
 "I just meditated"
 "Did I work out today?"
 "How's my DSA streak?"
-"What are my habits?"
+
+# Jobs
+"Schedule a standup summary every weekday at 10am"
+"Remind me to review PRs every Friday at 5pm"
+"What jobs do I have scheduled?"
+"Cancel the standup job"
 
 # Memory
-"Remember that my standup is every day at 10am"
-"Remember I prefer dark roast coffee"
+"Remember that I prefer dark roast coffee"
 "What do you know about my schedule?"
-"Do you know my coffee preference?"
 ```
 
 ---
 
 ## Roadmap
 
+### Done
+
+- [x] **Voice pipeline** — STT (faster-whisper), TTS (Piper), wake word (OpenWakeWord), mic button
+- [x] **Browser agent** — DuckDuckGo search, BeautifulSoup page reading, Playwright automation
+- [x] **Implicit memory** — Qdrant vector DB, Gemini embeddings, auto-injected context
+- [x] **Habit tracker** — SQLite, streaks, weekly goals, `/habits` page
+- [x] **Live DAG panel** — real-time execution graph per task, tool call feed, step highlighting
+- [x] **Jobs & scheduler** — APScheduler cron jobs, `notify-send` + TTS notifications, `/jobs` page with run history
+
 ### Next
 
-- [ ] **Async orchestrator** — Convert `processUserRequest` to `async def`. Currently runs in a thread pool, blocking the event loop. Enables parallel tool execution via `asyncio.gather()` and a proper stop button.
-- [ ] **Tool call trace UI** — Collapsible steps inside the LOOM bubble showing which tools ran and what they returned. Emit `__tool__` / `__tool_result__` SSE prefixes; JS renders them.
-- [ ] **Jobs page** — `/jobs` view with history of every task: input, agent used, tools called, result, timing.
-- [ ] **Retry + backoff** — Exponential backoff on all LLM calls. Currently a failed API call silently returns nothing.
 - [ ] **Coding agent** — Write + execute Python in `~/loom_workspace/`. Tools: `write_file`, `run_python`, `run_shell`, `install_package`.
+- [ ] **Stop button** — Cancel an in-flight request without killing the server.
+- [ ] **Retry + backoff** — Exponential backoff on LLM calls. Currently a failed API call silently returns nothing.
 - [ ] **Custom "Hey LOOM" wake word** — Train using openwakeword's synthetic data pipeline.
 
 ### Medium term
 
-- [ ] **Task state machine** — `Task` object: `pending → running → done/failed`. Enables job history, retry, cancellation, and a stop button in the UI.
-- [ ] **Stop button** — Cancel an in-flight request without killing the server.
 - [ ] **Base agent class** — `BaseAgent` with shared retry logic, tool-call loop, and structured step emission. `DesktopAgent` and `BrowserAgent` inherit.
-- [ ] **Habit analytics** — Weekly summary: energy patterns by time of day, productivity scores, goal alignment ("are you doing enough?"). Feeds into the life-profiling vision.
+- [ ] **Habit analytics** — Weekly summary: streaks, goal alignment, patterns.
+- [ ] **Filtering on Jobs page** — Filter run history by agent, status, date range.
+- [ ] **Job editing** — Edit prompt/schedule without delete + recreate.
 
 ### Long-term — always-on background companion
 
 The end goal: LOOM runs continuously, learns your habits, checks in on your goals, and helps proactively rather than waiting to be asked.
 
-- **Episodic memory** — SQLite log of every interaction. Daily summaries stored as vectors in Qdrant. LOOM remembers what you worked on yesterday.
+- **Episodic memory** — SQLite log of every interaction. Daily summaries stored as vectors. LOOM remembers what you worked on yesterday.
 - **Activity monitor** — Background daemon watches active windows via D-Bus, detects context (coding, browsing, idle), stores patterns.
-- **Daily check-in** — systemd timer at login. Small popup window asks about your day, reviews goals, gives a plan.
-- **Self-improvement layer** — LOOM surfaces habit patterns, tracks fitness and sleep goals, delivers weekly summaries.
-- **Memory overhaul** — `importance` score + `last_accessed` on every Qdrant record. Decay low-importance facts over time. Separate episodic (event  ⏵⏵ accept edits on (shift+tab to cycle) · 
+- **Daily standup** — Scheduled job pulls habit streaks + yesterday's task history + recent memories → generates a personalized standup report every morning.
+- **Memory decay** — `importance` score + `last_accessed` on every Qdrant record. Low-importance facts fade over time.
+- **Parallel tool execution** — `asyncio.gather()` for independent tool calls within a single agent iteration.
+- **Inter-agent delegation** — desktop agent can spawn browser agent mid-task without returning to orchestrator.
 
 ---
 
@@ -444,14 +515,16 @@ The end goal: LOOM runs continuously, learns your habits, checks in on your goal
 | LLM routing | [OpenRouter](https://openrouter.ai) (cloud) / [Ollama](https://ollama.com) (local) |
 | Embeddings | Google Gemini `gemini-embedding-001` |
 | Vector DB | [Qdrant](https://qdrant.tech) (local, on-disk) |
+| Job scheduling | [APScheduler](https://apscheduler.readthedocs.io) (BackgroundScheduler + CronTrigger) |
 | Web framework | FastAPI + SSE Starlette |
 | Browser automation | Playwright (Chromium headless) |
 | Web search | DuckDuckGo via `ddgs` (no API key) |
 | STT | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) `base.en` |
-| TTS | espeak-ng |
+| TTS | Piper TTS |
 | Wake word | [OpenWakeWord](https://github.com/dscripka/openWakeWord) |
 | Spotify | [Spotipy](https://spotipy.readthedocs.io) (OAuth) |
 | OS integration | pydbus, D-Bus, `brightnessctl`, `wpctl` (PipeWire) |
+| Notifications | `notify-send` (libnotify) |
 | Audio capture | sounddevice |
 | Markdown render | marked.js (CDN) |
 
@@ -460,8 +533,9 @@ The end goal: LOOM runs continuously, learns your habits, checks in on your goal
 ## Notes
 
 - All processing is local except LLM API calls (OpenRouter) and embeddings (Gemini). Nothing else leaves the machine.
-- The Qdrant database is at `loom_db/` — back it up if you have memories you care about.
+- The Qdrant database is at `loom_db/collection/` — back it up if you have memories you care about.
+- Scheduled job results are stored in `loom_db/jobs.db` alongside the full task run history.
 - Screenshots are saved to `~/Pictures/loom_screenshots/`.
-- In local mode, everything is offline except Gemini embeddings. A local embedding model replacement is on the roadmap.
+- In local mode, everything is offline except Gemini embeddings.
 - The browser agent caps at 8 tool-call iterations; the desktop agent at 10. This prevents infinite loops on weak models.
 - `get_page_text` uses plain HTTP (no JS execution). For JS-heavy sites, use `open_url` first to load the page in Playwright, then scrape.

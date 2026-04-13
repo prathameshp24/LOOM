@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jobs — L.O.O.M.</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .jobs-main {
+      position: fixed;
+      top: var(--nav-h);
+      bottom: 0; left: 0; right: 0;
+      overflow-y: auto;
+      padding: 32px 24px 48px;
+    }
+    .jobs-inner { max-width: 960px; margin: 0 auto; }
+
+    /* Section headers */
+    .section-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 20px;
+    }
+    .section-title {
+      font-size: 18px; font-weight: 300;
+      color: var(--text); letter-spacing: 0.04em;
+    }
+    .section-title span { color: var(--cyan); font-weight: 600; }
+
+    .section-sep { height: 1px; background: var(--border); margin: 36px 0 28px; }
+
+    /* Add job button */
+    .add-btn {
+      padding: 7px 18px; border-radius: 20px;
+      border: 1px solid var(--cyan);
+      background: rgba(0,212,255,0.07);
+      color: var(--cyan); font-size: 13px;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .add-btn:hover { background: rgba(0,212,255,0.15); }
+
+    /* New job form */
+    .job-form {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px;
+      margin-bottom: 24px; display: flex; flex-direction: column; gap: 14px;
+      animation: msgIn 0.2s ease both;
+    }
+    .form-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 180px; }
+    .form-group label { font-size: 11px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+    .form-input, .form-textarea, .form-select {
+      background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+      border-radius: 8px; padding: 9px 12px;
+      color: var(--text); font-size: 13px; font-family: inherit;
+      transition: border-color 0.2s;
+    }
+    .form-input:focus, .form-textarea:focus, .form-select:focus {
+      outline: none; border-color: rgba(0,212,255,0.5);
+    }
+    .form-textarea { resize: vertical; min-height: 72px; }
+    .form-select option { background: #111; }
+
+    .schedule-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+    .schedule-row .form-group { flex: 0 0 auto; }
+    .time-input { width: 110px; }
+    .repeat-select { width: 160px; }
+    .cron-preview {
+      font-size: 11px; color: var(--muted); font-family: monospace;
+      padding: 4px 8px; background: rgba(255,255,255,0.03);
+      border-radius: 6px; border: 1px solid var(--border);
+      align-self: flex-end; white-space: nowrap;
+    }
+
+    .form-actions { display: flex; gap: 10px; }
+    .btn-save {
+      padding: 8px 22px; border-radius: 8px; border: none;
+      background: var(--cyan); color: #000;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-save:hover { background: #33dcff; }
+    .btn-cancel {
+      padding: 8px 16px; border-radius: 8px;
+      border: 1px solid var(--border); background: transparent;
+      color: var(--muted); font-size: 13px; cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .btn-cancel:hover { border-color: var(--text); color: var(--text); }
+
+    /* ── Job cards ── */
+    .jobs-grid { display: flex; flex-direction: column; gap: 12px; }
+    .job-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px 18px;
+      display: flex; align-items: flex-start; gap: 14px;
+      transition: border-color 0.2s;
+      position: relative;
+    }
+    .job-card:hover { border-color: rgba(0,212,255,0.25); }
+    .job-card.disabled { opacity: 0.5; }
+
+    .job-icon {
+      font-size: 20px; flex-shrink: 0; margin-top: 2px;
+      width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+      background: rgba(0,212,255,0.07); border-radius: 10px;
+    }
+    .job-body { flex: 1; min-width: 0; }
+    .job-name {
+      font-size: 14px; font-weight: 600; color: var(--text);
+      margin-bottom: 4px;
+    }
+    .job-prompt {
+      font-size: 12px; color: var(--muted); margin-bottom: 8px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .job-meta { display: flex; gap: 14px; flex-wrap: wrap; }
+    .job-badge {
+      font-size: 11px; padding: 2px 8px; border-radius: 12px;
+      border: 1px solid rgba(0,212,255,0.2);
+      color: var(--cyan); background: rgba(0,212,255,0.06);
+    }
+    .job-time { font-size: 11px; color: var(--muted); }
+
+    .job-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .toggle-switch {
+      position: relative; width: 36px; height: 20px;
+    }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; inset: 0; border-radius: 20px;
+      background: #333; cursor: pointer; transition: background 0.2s;
+    }
+    .toggle-slider::before {
+      content: ''; position: absolute;
+      width: 14px; height: 14px; border-radius: 50%;
+      left: 3px; top: 3px; background: #888;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .toggle-switch input:checked + .toggle-slider { background: rgba(0,212,255,0.25); }
+    .toggle-switch input:checked + .toggle-slider::before {
+      transform: translateX(16px); background: var(--cyan);
+    }
+    .job-delete {
+      background: none; border: none; color: var(--muted);
+      cursor: pointer; font-size: 14px; padding: 4px 6px;
+      border-radius: 6px; transition: color 0.15s, background 0.15s;
+    }
+    .job-delete:hover { color: #ef4444; background: rgba(239,68,68,0.1); }
+
+    /* ── Task run cards ── */
+    .runs-list { display: flex; flex-direction: column; gap: 10px; }
+    .run-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .run-card:hover { border-color: rgba(139,92,246,0.3); }
+
+    .run-header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px; cursor: pointer;
+    }
+    .run-agent-badge {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+      padding: 2px 8px; border-radius: 10px; flex-shrink: 0;
+      text-transform: uppercase;
+    }
+    .badge-desktop { background: rgba(0,212,255,0.1); color: var(--cyan); border: 1px solid rgba(0,212,255,0.2); }
+    .badge-browser  { background: rgba(139,92,246,0.1); color: var(--purple); border: 1px solid rgba(139,92,246,0.2); }
+    .badge-scheduled { background: rgba(236,72,153,0.1); color: var(--pink); border: 1px solid rgba(236,72,153,0.2); }
+
+    .run-input { flex: 1; font-size: 13px; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .run-meta { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .run-duration { font-size: 11px; color: var(--muted); }
+    .run-time { font-size: 11px; color: var(--muted); }
+    .run-expand { font-size: 12px; color: var(--muted); transition: transform 0.2s; }
+    .run-card.open .run-expand { transform: rotate(180deg); }
+    .run-delete {
+      background: none; border: none; color: var(--muted);
+      cursor: pointer; font-size: 13px; padding: 3px 6px;
+      border-radius: 5px; transition: color 0.15s, background 0.15s;
+    }
+    .run-delete:hover { color: #ef4444; background: rgba(239,68,68,0.1); }
+
+    .run-body {
+      display: none; padding: 0 16px 14px;
+      border-top: 1px solid var(--border);
+    }
+    .run-card.open .run-body { display: block; }
+
+    .run-result {
+      font-size: 12px; color: var(--muted); line-height: 1.55;
+      padding: 10px 0 8px; border-bottom: 1px solid rgba(255,255,255,0.05);
+      margin-bottom: 10px;
+    }
+    .run-tools { display: flex; flex-direction: column; gap: 5px; }
+    .run-tool-entry {
+      font-size: 11px; padding: 4px 8px;
+      border-radius: 6px; background: rgba(255,255,255,0.02);
+      border-left: 2px solid rgba(0,212,255,0.25);
+      display: flex; gap: 8px; align-items: baseline;
+    }
+    .run-tool-name { color: var(--cyan); font-weight: 700; flex-shrink: 0; }
+    .run-tool-result { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .empty-state {
+      text-align: center; padding: 40px 0;
+      color: var(--muted); font-size: 13px; font-style: italic;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="nav-logo">
+      <span class="logo-icon">🧵</span>
+      <span class="logo-text">L.O.O.M.</span>
+    </div>
+    <div class="nav-links">
+      <a href="/"       class="nav-link muted">Home</a>
+      <a href="/habits" class="nav-link muted">Habits</a>
+      <a href="/jobs"   class="nav-link active">Jobs</a>
+      <a href="#"       class="nav-link muted">Prompts</a>
+    </div>
+    <div class="nav-right">
+      <span class="status-dot"></span>
+      <span class="status-label">ONLINE</span>
+    </div>
+  </nav>
+
+  <main class="jobs-main">
+    <div class="jobs-inner">
+
+      <!-- Scheduled Jobs -->
+      <div class="section-header">
+        <h2 class="section-title">Scheduled <span>Jobs</span></h2>
+        <button class="add-btn" id="addJobBtn">+ New Job</button>
+      </div>
+
+      <!-- New job form (hidden by default) -->
+      <div class="job-form" id="jobForm" style="display:none">
+        <div class="form-row">
+          <div class="form-group" style="flex:0 0 220px">
+            <label>Job Name</label>
+            <input type="text" class="form-input" id="jobName" placeholder="Daily Standup" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Prompt (what to send L.O.O.M.)</label>
+          <textarea class="form-textarea" id="jobPrompt" placeholder="Give me a standup summary: my habit streaks, what I did yesterday, and 3 priorities for today."></textarea>
+        </div>
+        <div class="schedule-row">
+          <div class="form-group">
+            <label>Time</label>
+            <input type="time" class="form-input time-input" id="jobTime" value="10:00" />
+          </div>
+          <div class="form-group">
+            <label>Repeat</label>
+            <select class="form-select repeat-select" id="jobRepeat">
+              <option value="daily">Every day</option>
+              <option value="weekdays">Weekdays (Mon–Fri)</option>
+              <option value="weekends">Weekends (Sat–Sun)</option>
+              <option value="weekly_mon">Every Monday</option>
+              <option value="weekly_fri">Every Friday</option>
+              <option value="hourly">Every hour</option>
+            </select>
+          </div>
+          <div class="cron-preview" id="cronPreview">0 10 * * *</div>
+        </div>
+        <div class="form-actions">
+          <button class="btn-save" id="jobSaveBtn">Create Job</button>
+          <button class="btn-cancel" id="jobCancelBtn">Cancel</button>
+        </div>
+      </div>
+
+      <div class="jobs-grid" id="jobsGrid">
+        <div class="empty-state">No scheduled jobs yet.</div>
+      </div>
+
+      <div class="section-sep"></div>
+
+      <!-- Task Run History -->
+      <div class="section-header">
+        <h2 class="section-title">Run <span>History</span></h2>
+      </div>
+
+      <div class="runs-list" id="runsList">
+        <div class="empty-state">No task runs recorded yet.</div>
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    /* ── Cron builder ──────────────────────────────────────── */
+    const repeatToCron = {
+      daily:       (h, m) => `${m} ${h} * * *`,
+      weekdays:    (h, m) => `${m} ${h} * * 1-5`,
+      weekends:    (h, m) => `${m} ${h} * * 6,0`,
+      weekly_mon:  (h, m) => `${m} ${h} * * 1`,
+      weekly_fri:  (h, m) => `${m} ${h} * * 5`,
+      hourly:      ()      => `0 * * * *`,
+    };
+    const repeatHuman = {
+      daily:       (t) => `${t} every day`,
+      weekdays:    (t) => `${t} every weekday`,
+      weekends:    (t) => `${t} every weekend`,
+      weekly_mon:  (t) => `${t} every Monday`,
+      weekly_fri:  (t) => `${t} every Friday`,
+      hourly:      ()  => `every hour`,
+    };
+
+    function buildCron() {
+      const time   = document.getElementById('jobTime').value || '10:00';
+      const repeat = document.getElementById('jobRepeat').value;
+      const [h, m] = time.split(':').map(Number);
+      return repeatToCron[repeat](h, m);
+    }
+    function buildHuman() {
+      const time   = document.getElementById('jobTime').value || '10:00';
+      const repeat = document.getElementById('jobRepeat').value;
+      return repeatHuman[repeat](time);
+    }
+
+    ['jobTime', 'jobRepeat'].forEach(id => {
+      document.getElementById(id).addEventListener('input', () => {
+        document.getElementById('cronPreview').textContent = buildCron();
+      });
+    });
+
+    /* ── New job form toggle ───────────────────────────────── */
+    document.getElementById('addJobBtn').addEventListener('click', () => {
+      const form = document.getElementById('jobForm');
+      form.style.display = form.style.display === 'none' ? 'flex' : 'none';
+    });
+    document.getElementById('jobCancelBtn').addEventListener('click', () => {
+      document.getElementById('jobForm').style.display = 'none';
+    });
+
+    /* ── Create job ────────────────────────────────────────── */
+    document.getElementById('jobSaveBtn').addEventListener('click', async () => {
+      const name   = document.getElementById('jobName').value.trim();
+      const prompt = document.getElementById('jobPrompt').value.trim();
+      const cron   = buildCron();
+      const human  = buildHuman();
+
+      if (!name || !prompt) { alert('Name and prompt are required.'); return; }
+
+      const btn = document.getElementById('jobSaveBtn');
+      btn.disabled = true; btn.textContent = 'Creating...';
+
+      try {
+        const res = await fetch('/api/jobs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, prompt, cron, schedule_human: human }),
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          alert(err.detail || 'Failed to create job.');
+          return;
+        }
+        document.getElementById('jobName').value = '';
+        document.getElementById('jobPrompt').value = '';
+        document.getElementById('jobForm').style.display = 'none';
+        await loadJobs();
+      } finally {
+        btn.disabled = false; btn.textContent = 'Create Job';
+      }
+    });
+
+    /* ── Helpers ───────────────────────────────────────────── */
+    function timeAgo(iso) {
+      if (!iso) return '—';
+      const diff = Date.now() - new Date(iso).getTime();
+      const s = Math.floor(diff / 1000);
+      if (s < 60)  return `${s}s ago`;
+      if (s < 3600) return `${Math.floor(s/60)}m ago`;
+      if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+      return `${Math.floor(s/86400)}d ago`;
+    }
+    function fmtDuration(ms) {
+      if (!ms) return '';
+      if (ms < 1000) return `${ms}ms`;
+      return `${(ms/1000).toFixed(1)}s`;
+    }
+    function agentBadge(agent) {
+      if (agent === 'browser_agent') return '<span class="run-agent-badge badge-browser">browser</span>';
+      if (agent === 'scheduled')     return '<span class="run-agent-badge badge-scheduled">scheduled</span>';
+      return '<span class="run-agent-badge badge-desktop">desktop</span>';
+    }
+
+    /* ── Load + render scheduled jobs ─────────────────────── */
+    async function loadJobs() {
+      const jobs = await fetch('/api/jobs').then(r => r.json()).catch(() => []);
+      const grid = document.getElementById('jobsGrid');
+
+      if (!jobs.length) {
+        grid.innerHTML = '<div class="empty-state">No scheduled jobs yet.</div>';
+        return;
+      }
+
+      grid.innerHTML = jobs.map(j => `
+        <div class="job-card ${j.enabled ? '' : 'disabled'}" id="job-card-${j.id}">
+          <div class="job-icon">⏰</div>
+          <div class="job-body">
+            <div class="job-name">${escHtml(j.name)}</div>
+            <div class="job-prompt">${escHtml(j.prompt)}</div>
+            <div class="job-meta">
+              <span class="job-badge">${escHtml(j.schedule_human)}</span>
+              <span class="job-time">Last: ${timeAgo(j.last_run_at)}</span>
+              <span class="job-time">Next: ${j.enabled && j.next_run_at ? new Date(j.next_run_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—'}</span>
+            </div>
+          </div>
+          <div class="job-actions">
+            <label class="toggle-switch" title="${j.enabled ? 'Pause' : 'Resume'}">
+              <input type="checkbox" ${j.enabled ? 'checked' : ''} onchange="toggleJob(${j.id}, this.checked)" />
+              <span class="toggle-slider"></span>
+            </label>
+            <button class="job-delete" onclick="deleteJob(${j.id}, '${escHtml(j.name).replace(/'/g,"\\'")}')">✕</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function toggleJob(jobId, enabled) {
+      await fetch(`/api/jobs/${jobId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      const card = document.getElementById(`job-card-${jobId}`);
+      if (card) card.classList.toggle('disabled', !enabled);
+    }
+
+    async function deleteJob(jobId, name) {
+      if (!confirm(`Delete job "${name}"?`)) return;
+      await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' });
+      await loadJobs();
+    }
+
+    /* ── Load + render task run history ───────────────────── */
+    async function loadRuns() {
+      const runs = await fetch('/api/task-runs').then(r => r.json()).catch(() => []);
+      const list = document.getElementById('runsList');
+
+      if (!runs.length) {
+        list.innerHTML = '<div class="empty-state">No task runs recorded yet.</div>';
+        return;
+      }
+
+      list.innerHTML = runs.map(r => {
+        const tools = (r.tool_calls || []).map(t => `
+          <div class="run-tool-entry">
+            <span class="run-tool-name">${escHtml(t.name)}</span>
+            <span class="run-tool-result">${escHtml(String(t.result || '').slice(0, 120))}</span>
+          </div>
+        `).join('');
+
+        return `
+          <div class="run-card" id="run-card-${r.id}">
+            <div class="run-header" onclick="toggleRun(${r.id})">
+              ${agentBadge(r.agent)}
+              <span class="run-input">${escHtml(r.user_input)}</span>
+              <div class="run-meta">
+                <span class="run-duration">${fmtDuration(r.duration_ms)}</span>
+                <span class="run-time">${timeAgo(r.created_at)}</span>
+                <span class="run-expand">▾</span>
+              </div>
+              <button class="run-delete" onclick="event.stopPropagation(); deleteRun(${r.id})">✕</button>
+            </div>
+            <div class="run-body">
+              <div class="run-result">${escHtml(r.result || '—')}</div>
+              ${tools ? `<div class="run-tools">${tools}</div>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function toggleRun(id) {
+      document.getElementById(`run-card-${id}`).classList.toggle('open');
+    }
+
+    async function deleteRun(id) {
+      await fetch(`/api/task-runs/${id}`, { method: 'DELETE' });
+      document.getElementById(`run-card-${id}`)?.remove();
+      if (!document.querySelector('.run-card')) {
+        document.getElementById('runsList').innerHTML = '<div class="empty-state">No task runs recorded yet.</div>';
+      }
+    }
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    /* ── Init ──────────────────────────────────────────────── */
+    loadJobs();
+    loadRuns();
+  </script>
+</body>
+</html>

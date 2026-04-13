@@ -10,6 +10,7 @@ from agents.desktop_agent.agent import runDesktopAgent
 from agents.browser_agent.agent import runBrowserAgent
 from core.memory_manager import getImplicitContext
 from core.training_logger import log_orchestrator
+from core.task_logger import log_task_run
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
@@ -68,6 +69,11 @@ HABIT RULE:
 - If a [SYSTEM HABIT CONTEXT: ...] block is present, use it to answer habit questions conversationally without calling a tool.
 - If the user says they completed a habit (meditated, worked out, ran, did DSA, etc.), route to `desktop_agent` with a plan to call `logHabitTool`.
 - If the user asks to create or start tracking a new habit, route to `desktop_agent` to call `createHabitTool`.
+
+JOB SCHEDULING RULE:
+- If the user asks to schedule, automate, or repeat something on a recurring basis (e.g. "remind me every day at 10am", "schedule a standup", "run X every weekday"), route to `desktop_agent` to call `createJobTool`.
+- `createJobTool` requires: name (short label), prompt (exact message to send L.O.O.M. when job fires), cron (5-field cron e.g. "0 10 * * 1-5"), schedule_human (e.g. "10:00 AM every weekday").
+- If the user asks to cancel or delete a scheduled job, route to `desktop_agent` to call `deleteJobTool`.
 
 Respond strictly in json format matching this structure : 
 {
@@ -194,14 +200,31 @@ async def processUserRequest(userInput: str, emit=print):
         logging.info(f"🔀 Routing to: {targetAgent}")
 
         # 5. Route to the specialized agents
+        _task_tool_calls: list[dict] = []
+
+        def _tracking_emit(msg: str):
+            """Wraps emit to capture tool calls for task run logging."""
+            if msg.startswith("__dag__"):
+                try:
+                    data = json.loads(msg[len("__dag__"):])
+                    if data.get("type") == "tool":
+                        _task_tool_calls.append({"name": data["name"], "result": data.get("result", "")})
+                except Exception:
+                    pass
+            emit(msg)
+
+        _t_route = time.monotonic()
+
         if targetAgent == "desktop_agent":
             emit("__status__Running on desktop...")
             steps = _parse_plan_steps(plan) if plan else []
             if steps:
                 emit(f"__dag__{json.dumps({'type': 'init', 'steps': steps, 'agent': targetAgent})}")
             globalState.desktopChat = []  # fresh context per task — orchestrator plan is self-contained
-            result = await runDesktopAgent(plan, userInput, emit=emit)
+            result = await runDesktopAgent(plan, userInput, emit=_tracking_emit)
             emit(result)
+            log_task_run(userInput, "desktop_agent", plan or "", _task_tool_calls, result,
+                         duration_ms=int((time.monotonic() - _t_route) * 1000))
 
             # CRITICAL: Tell OpenRouter what the Gemini hands just did
             globalState.orchestratorChat.append({
@@ -215,8 +238,10 @@ async def processUserRequest(userInput: str, emit=print):
             if steps:
                 emit(f"__dag__{json.dumps({'type': 'init', 'steps': steps, 'agent': targetAgent})}")
             globalState.browserChat = []
-            result = await runBrowserAgent(plan, userInput, emit=emit)
+            result = await runBrowserAgent(plan, userInput, emit=_tracking_emit)
             emit(result)
+            log_task_run(userInput, "browser_agent", plan or "", _task_tool_calls, result,
+                         duration_ms=int((time.monotonic() - _t_route) * 1000))
 
             globalState.orchestratorChat.append({
                 "role": "user",

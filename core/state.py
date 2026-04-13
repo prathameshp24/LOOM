@@ -7,7 +7,8 @@ import os
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
-CLOUD_ORCHESTRATOR_MODEL = "arcee-ai/trinity-large-preview:free"
+CLOUD_ORCHESTRATOR_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free"
+# CLOUD_ORCHESTRATOR_MODEL = "arcee-ai/trinity-large-preview:free"
 CLOUD_DESKTOP_MODEL      = "nvidia/nemotron-3-nano-30b-a3b:free"
 LOCAL_MODEL              = "qwen3:4b"
 
